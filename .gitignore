@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+dist/
+out/
+release/
+*.tsbuildinfo
+
+# Electron
+.electron/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+JU_SHELL_TOKEN*
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs / runtime
+logs/
+*.log
+npm-debug.log*
+.state/
+.jewbot/
+receipts/
+work/
+
+# Models / large binaries
+*.gguf
+*.bin
+models/
+
+# Coverage / test
+coverage/
+.nyc_output/

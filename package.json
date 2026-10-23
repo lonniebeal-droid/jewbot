@@ -1,0 +1,40 @@
+{
+  "name": "jewbot",
+  "version": "0.1.0",
+  "description": "Open-source Cursor-like IDE agent: local LLMs (Ollama), terminal, SSH, agentic loop \u2014 $0 by default",
+  "main": "dist/main/index.js",
+  "author": "lonniebeal-droid",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lonniebeal-droid/jewbot.git"
+  },
+  "scripts": {
+    "build": "tsc && npm run copy:static",
+    "copy:static": "mkdir -p dist/renderer && cp src/renderer/index.html src/renderer/renderer.js dist/renderer/",
+    "start": "npm run build && electron .",
+    "dev": "tsc -w",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test:safety": "npx --yes tsx scripts/smoke-safety.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "diff": "^7.0.0",
+    "ignore": "^6.0.2",
+    "ssh2": "^1.16.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^6.0.0",
+    "@types/node": "^22.13.10",
+    "@types/ssh2": "^1.15.4",
+    "electron": "^35.0.0",
+    "typescript": "^5.8.2"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.0.0"
+  }
+}
