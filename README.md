@@ -4,7 +4,7 @@
 
 Terminal control, SSH to your machines (Dell / Pi / Mac), agentic plan→act→observe loop, file edits with diff preview, project-aware context, and cascade execution across milestones.
 
-> **Status:** Milestone **M1** — live Ollama streaming chat and an agent loop with `read_file` / `list_dir`. Terminal streaming and destructive-command UX are **M2**.
+> **Status:** Milestone **M2** — local terminal streaming plus a confirmation dialog for destructive commands. **M3** (file edit + diff preview) is next. SSH sessions are **M5**.
 
 ## Why Jewbot?
 
@@ -38,7 +38,7 @@ npm install
 npm start
 ```
 
-That builds the Electron app and opens the chat window. **Agent** mode streams tokens from Ollama, then runs `list_dir` and `read_file` inside the open folder. **Chat** mode is the same stream with no tools.
+That builds the Electron app and opens the chat window. **Agent** mode streams tokens from Ollama, then runs `list_dir`, `read_file`, and `run_terminal` inside the open folder. **Chat** mode is the same stream with no tools.
 
 Try:
 
@@ -46,7 +46,33 @@ Try:
 List this project and read README.md. Tell me the one-line description.
 ```
 
-Tokens appear as Ollama generates them. Each tool call shows up as a card with the tool name and the observation (directory listing or file text).
+Tokens appear as Ollama generates them. Each tool call shows up as a card with the tool name and the observation (directory listing, file text, or terminal output).
+
+### Run a streamed command
+
+The **Terminal** panel on the right runs a shell in the open project folder. Type a command and press **Run** (or Enter). Stdout and stderr show up as the process writes them. **Kill** stops that session.
+
+```text
+echo jewbot
+```
+
+You can also ask the agent, which calls `run_terminal` and streams the same output into the tool card and into the next observation:
+
+```text
+Run echo jewbot in the terminal and tell me what it printed.
+```
+
+`JEWBOT_TERMINAL_BACKEND=child_process` is the default (separate stdout and stderr). If the optional `node-pty` module is installed, `JEWBOT_TERMINAL_BACKEND=pty` uses a PTY instead; a PTY merges both streams into stdout.
+
+### Destructive commands
+
+Jewbot does not run destructive commands by itself. Patterns such as `rm -rf`, `git push --force` / `git push -f`, `mkfs`, `dd of=` / `dd if=`, `chmod -R 777 /`, `git reset --hard`, and `git clean -fd` open a confirm dialog with the exact command.
+
+- **Cancel** (Escape, or the default button) does not run it.
+- **Run anyway** mints a one-time execution id for that exact string and only then starts the process.
+- The model cannot approve itself by putting `approved` or an `executionId` in the tool call. Ignoring the dialog is a denial.
+
+Try `echo hello` for a normal stream. Try `rm -rf /tmp/example` only if you mean to confirm or cancel it — cancel leaves it unrun.
 
 Open another folder with **Open project**, or start Jewbot already pointed at one:
 
@@ -63,7 +89,7 @@ npm run typecheck
 npm test
 ```
 
-`npm test` runs the safety smoke and `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, and sends one live agent message (it errors cleanly when Ollama is not running).
+`npm test` runs the safety smoke, `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn), and `npm run test:m2` (destructive classification, a streamed `echo`, session kill, and `run_terminal` through the confirm gate). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, runs `echo` in the terminal panel, cancels a destructive confirm, and sends one live agent message (it errors cleanly when Ollama is not running).
 
 ## Environment
 
@@ -73,6 +99,7 @@ npm test
 | `JEWBOT_MODEL` | `qwen2.5-coder:7b` | Chat model name sent to `/api/chat` |
 | `JEWBOT_PROJECT_ROOT` | process cwd | Directory the agent may list and read. The UI can change it with **Open project**. |
 | `JEWBOT_ALLOW_PAID` | unset/`0` | Must be `1` before any paid or non-local provider host is contacted |
+| `JEWBOT_TERMINAL_BACKEND` | `child_process` | `child_process` keeps stdout and stderr separate. `pty` uses `node-pty` when that optional module loads |
 
 ## Safety (always on)
 
