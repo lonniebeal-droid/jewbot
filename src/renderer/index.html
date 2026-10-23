@@ -33,6 +33,14 @@
     .tool { border: 1px solid #2a2f3a; border-radius: 8px; padding: 8px; background: #12161d; }
     .tool-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #79b8ff; margin-bottom: 4px; }
     .tool pre { color: #d0d7de; max-height: 220px; overflow: auto; }
+    .diff-card pre { max-height: 320px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .diff-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; margin-bottom: 6px; }
+    .diff-add { color: #3fb950; }
+    .diff-del { color: #f85149; }
+    .diff-hunk { color: #79b8ff; }
+    .diff-actions { display: flex; gap: 8px; margin-top: 8px; }
+    .diff-status { font-size: 12px; margin-top: 6px; }
+    .secret-banner { color: #d29922; font-size: 12px; margin-bottom: 6px; }
     .composer { display: flex; gap: 8px; margin-top: 8px; align-items: flex-end; }
     .composer textarea { flex: 1; resize: vertical; min-height: 52px; }
     .composer input { flex: 1; width: auto; min-width: 0; }
@@ -62,7 +70,7 @@
 <body>
   <header>
     <h1>JEWBOT</h1>
-    <span class="badge" id="milestone">M2</span>
+    <span class="badge" id="milestone">M3</span>
     <span class="muted" id="spend">$0 · Ollama</span>
     <span class="root" id="projectRoot" title="">…</span>
     <button class="secondary" id="openProject" type="button">Open project</button>
@@ -75,7 +83,7 @@
         <button class="secondary mode" id="modeChat" type="button">Chat</button>
         <span class="muted" id="phase"></span>
       </div>
-      <p class="muted" id="hint">Agent streams tokens, then calls list_dir, read_file, and run_terminal. Destructive shell commands ask first.</p>
+      <p class="muted" id="hint">Agent can list, read, and edit files in this project. Edits show a diff and apply only after Accept. Destructive shell commands ask first.</p>
       <div id="transcript"></div>
       <div class="composer">
         <textarea id="goal" rows="2" placeholder="Ask Jewbot…  (Enter to send, Shift+Enter for newline)"></textarea>
@@ -112,7 +120,7 @@
       <p class="muted" id="confirmCategory">destructive</p>
       <p id="confirmReason">This command is destructive.</p>
       <pre id="confirmCommand"></pre>
-      <p>Jewbot will not run this unless you confirm. Cancel leaves it unrun.</p>
+      <p id="confirmBlurb">Jewbot will not run this unless you confirm. Cancel leaves it unrun.</p>
       <div class="row">
         <button class="secondary" id="confirmNo" type="button">Cancel</button>
         <button class="danger" id="confirmYes" type="button">Run anyway</button>

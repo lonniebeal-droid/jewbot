@@ -17,6 +17,12 @@ interface StreamEvent {
   reason?: string;
   category?: string;
   stream?: 'stdout' | 'stderr';
+  editId?: string;
+  path?: string;
+  unifiedDiff?: string;
+  created?: boolean;
+  secret?: boolean;
+  tool?: string;
 }
 
 interface TerminalPanelEvent {
@@ -75,6 +81,8 @@ declare global {
       terminalKill: (sessionId: string) => Promise<{ killed: boolean }>;
       terminalRun: (command: string) => Promise<unknown>;
       confirmReply: (payload: { confirmId: string; approved: boolean }) => void;
+      editReply: (payload: { editId: string; accepted: boolean }) => void;
+      editUndo: (editId: string) => Promise<{ ok: boolean; filePath?: string; action?: string; reason?: string }>;
       onTerminalEvent: (cb: (ev: TerminalPanelEvent) => void) => () => void;
       contextSummary: () => Promise<unknown>;
     };
