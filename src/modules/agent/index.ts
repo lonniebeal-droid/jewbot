@@ -1,8 +1,9 @@
 /**
  * Agentic loop: plan → act → observe → iterate (Cursor-style).
+ * M1 live tools: list_dir, read_file. Other tools stay wired but gated by Safety.
  */
 
-import { chatOnce, ChatMessage, defaultOllamaConfig, OllamaConfig } from '../llm';
+import { chatStream, ChatMessage, defaultOllamaConfig, OllamaConfig } from '../llm';
 import { FileWorkspace } from '../files';
 import { TerminalSession } from '../terminal';
 import { SshManager } from '../ssh';
@@ -29,6 +30,16 @@ export interface AgentRunResult {
   blockReason?: string;
 }
 
+export type AgentStreamEvent =
+  | { type: 'status'; status: AgentStatus }
+  | { type: 'token'; text: string }
+  | { type: 'message_done'; text: string }
+  | { type: 'tool_call'; name: string; args: Record<string, unknown> }
+  | { type: 'tool_result'; name: string; args: Record<string, unknown>; observation: string }
+  | { type: 'final'; text: string }
+  | { type: 'error'; message: string }
+  | { type: 'done'; result: AgentRunResult };
+
 export interface AgentDeps {
   files: FileWorkspace;
   terminal: TerminalSession;
@@ -38,21 +49,65 @@ export interface AgentDeps {
   maxSteps?: number;
 }
 
-const SYSTEM = `You are Jewbot, a local coding agent. Prefer Ollama/local tools. Respond with either:
-(1) a short plan and a single JSON tool call on its own line: {"tool":"name","args":{...}}
-(2) or FINAL: <answer> when done.
-Tools: list_dir, read_file, propose_edit, run_terminal, ssh_exec, ask_owner.
-Never claim you ran a command without a tool call. $0 spend — no paid APIs.`;
+const OBSERVATION_MAX = 12_000;
+
+const SYSTEM = `You are Jewbot, a local coding agent. $0 spend — Ollama only, no paid APIs.
+Loop: think briefly, ACT with exactly one tool, then you will receive OBSERVE.
+When the goal is satisfied, reply with a line starting with FINAL: and the answer. Do not invent file contents.
+
+Live tools (paths stay inside the project root):
+- list_dir  {"tool":"list_dir","args":{"path":"."}}
+- read_file {"tool":"read_file","args":{"path":"relative/file.txt"}}
+
+Put the JSON object on its own line. One tool per turn.
+ask_owner pauses for a human. Do not claim a tool ran unless you emitted its JSON.`;
 
 export class AgentLoop {
   status: AgentStatus = 'idle';
   constructor(private deps: AgentDeps) {}
 
-  async run(goal: string): Promise<AgentRunResult> {
+  async run(goal: string, signal?: AbortSignal): Promise<AgentRunResult> {
+    let result: AgentRunResult | undefined;
+    for await (const ev of this.runStream(goal, signal)) {
+      if (ev.type === 'done') result = ev.result;
+    }
+    return result ?? { status: 'blocked', steps: [], blockReason: 'agent produced no result' };
+  }
+
+  async *runStream(goal: string, signal?: AbortSignal): AsyncGenerator<AgentStreamEvent, void, unknown> {
+    const finish = (result: AgentRunResult): AgentStreamEvent => {
+      this.status = result.status;
+      return { type: 'done', result };
+    };
+
+    if (!goal.trim()) {
+      const result: AgentRunResult = { status: 'blocked', steps: [], blockReason: 'Empty goal' };
+      yield { type: 'error', message: result.blockReason! };
+      yield finish(result);
+      return;
+    }
+    if (signal?.aborted) {
+      const result: AgentRunResult = { status: 'blocked', steps: [], blockReason: 'Cancelled' };
+      yield { type: 'error', message: 'Cancelled' };
+      yield finish(result);
+      return;
+    }
+
     const steps: AgentStep[] = [];
     const maxSteps = this.deps.maxSteps ?? 12;
     const cfg = this.deps.llm ?? defaultOllamaConfig();
-    const summary = await this.deps.context.summarize();
+
+    let summary;
+    try {
+      summary = await this.deps.context.summarize();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const result: AgentRunResult = { status: 'blocked', steps, blockReason: message };
+      yield { type: 'error', message };
+      yield finish(result);
+      return;
+    }
+
     const messages: ChatMessage[] = [
       { role: 'system', content: SYSTEM },
       {
@@ -62,52 +117,76 @@ export class AgentLoop {
     ];
 
     for (let n = 1; n <= maxSteps; n++) {
-      this.status = 'planning';
-      let reply: string;
-      try {
-        reply = await chatOnce(messages, cfg);
-      } catch (err) {
-        this.status = 'blocked';
-        return {
-          status: 'blocked',
-          steps,
-          blockReason: err instanceof Error ? err.message : String(err),
-        };
+      if (signal?.aborted) {
+        const result: AgentRunResult = { status: 'blocked', steps, blockReason: 'Cancelled' };
+        yield { type: 'error', message: 'Cancelled' };
+        yield finish(result);
+        return;
       }
+
+      this.status = 'planning';
+      yield { type: 'status', status: 'planning' };
+
+      let reply = '';
+      try {
+        for await (const token of chatStream(messages, cfg, { signal })) {
+          reply += token;
+          yield { type: 'token', text: token };
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.status = 'blocked';
+        const result: AgentRunResult = { status: 'blocked', steps, blockReason: message };
+        yield { type: 'error', message };
+        yield finish(result);
+        return;
+      }
+
+      yield { type: 'message_done', text: reply };
 
       if (/\bFINAL:\s*/i.test(reply)) {
-        this.status = 'done';
         const finalText = reply.replace(/^[\s\S]*?\bFINAL:\s*/i, '').trim();
         steps.push({ n, thought: reply, observation: 'final' });
-        return { status: 'done', steps, finalText };
+        this.status = 'done';
+        yield { type: 'final', text: finalText };
+        yield finish({ status: 'done', steps, finalText });
+        return;
       }
 
-      const tool = parseTool(reply);
+      const tool = parseToolCall(reply);
       if (!tool) {
         messages.push({ role: 'assistant', content: reply });
         messages.push({
           role: 'user',
-          content: 'No tool call found. Emit a JSON tool call or FINAL: …',
+          content: 'No tool call found. Emit one JSON tool call or a line starting with FINAL: …',
         });
         steps.push({ n, thought: reply });
         continue;
       }
 
       this.status = 'acting';
-      const observation = await this.dispatch(tool);
+      yield { type: 'status', status: 'acting' };
+      yield { type: 'tool_call', name: tool.name, args: tool.args };
+
+      const observation = truncate(await this.dispatch(tool), OBSERVATION_MAX);
       this.status = 'observing';
+      yield { type: 'status', status: 'observing' };
+      yield { type: 'tool_result', name: tool.name, args: tool.args, observation };
       steps.push({ n, thought: reply, tool, observation });
       messages.push({ role: 'assistant', content: reply });
       messages.push({ role: 'user', content: `OBSERVE:\n${observation}` });
 
       if (tool.name === 'ask_owner') {
-        this.status = 'blocked';
-        return { status: 'blocked', steps, blockReason: observation };
+        const result: AgentRunResult = { status: 'blocked', steps, blockReason: observation };
+        yield { type: 'error', message: observation };
+        yield finish(result);
+        return;
       }
     }
 
-    this.status = 'blocked';
-    return { status: 'blocked', steps, blockReason: 'max steps reached' };
+    const result: AgentRunResult = { status: 'blocked', steps, blockReason: 'max steps reached' };
+    yield { type: 'error', message: 'max steps reached' };
+    yield finish(result);
   }
 
   private async dispatch(tool: AgentToolCall): Promise<string> {
@@ -116,7 +195,7 @@ export class AgentLoop {
         case 'list_dir': {
           const rel = String(tool.args.path ?? '.');
           const entries = await this.deps.files.listDir(rel);
-          return entries.join('\n');
+          return entries.length ? entries.join('\n') : '(empty directory)';
         }
         case 'read_file': {
           const rel = String(tool.args.path ?? '');
@@ -150,7 +229,7 @@ export class AgentLoop {
         case 'ask_owner':
           return String(tool.args.question ?? 'Owner input required');
         default:
-          return `Unknown tool: ${tool.name}`;
+          return `Unknown tool: ${tool.name}. Live tools: list_dir, read_file.`;
       }
     } catch (err) {
       return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
@@ -158,14 +237,64 @@ export class AgentLoop {
   }
 }
 
-function parseTool(text: string): AgentToolCall | null {
-  const match = text.match(/\{[\s\S]*"tool"\s*:\s*"[^"]+"[\s\S]*\}/);
-  if (!match) return null;
-  try {
-    const obj = JSON.parse(match[0]) as { tool?: string; args?: Record<string, unknown> };
-    if (!obj.tool) return null;
-    return { name: obj.tool, args: obj.args ?? {} };
-  } catch {
-    return null;
+export function parseToolCall(text: string): AgentToolCall | null {
+  const sources: string[] = [];
+  const fenceRe = /```(?:json)?\s*([\s\S]*?)```/gi;
+  let fence: RegExpExecArray | null;
+  while ((fence = fenceRe.exec(text))) sources.push(fence[1]);
+  sources.push(text);
+
+  for (const src of sources) {
+    for (const raw of scanJsonObjects(src)) {
+      try {
+        const obj = JSON.parse(raw) as { tool?: unknown; args?: unknown };
+        if (typeof obj.tool !== 'string' || !obj.tool) continue;
+        const args =
+          obj.args && typeof obj.args === 'object' && !Array.isArray(obj.args)
+            ? (obj.args as Record<string, unknown>)
+            : {};
+        return { name: obj.tool, args };
+      } catch {
+        // keep scanning
+      }
+    }
   }
+  return null;
+}
+
+function scanJsonObjects(text: string): string[] {
+  const found: string[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '{') continue;
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    for (let j = i; j < text.length; j++) {
+      const ch = text[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') {
+        inStr = true;
+        continue;
+      }
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          found.push(text.slice(i, j + 1));
+          break;
+        }
+      }
+    }
+  }
+  return found;
+}
+
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}\n… [truncated ${text.length - max} chars]`;
 }

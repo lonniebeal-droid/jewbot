@@ -4,7 +4,7 @@
 
 Terminal control, SSH to your machines (Dell / Pi / Mac), agentic plan→act→observe loop, file edits with diff preview, project-aware context, and cascade execution across milestones.
 
-> **Status:** Milestone **M0** — architecture + TypeScript/Electron scaffold. Runtime features are stubs ready for M1+.
+> **Status:** Milestone **M1** — live Ollama streaming chat and an agent loop with `read_file` / `list_dir`. Terminal streaming and destructive-command UX are **M2**.
 
 ## Why Jewbot?
 
@@ -38,26 +38,48 @@ npm install
 npm start
 ```
 
-Typecheck only:
+That builds the Electron app and opens the chat window. **Agent** mode streams tokens from Ollama, then runs `list_dir` and `read_file` inside the open folder. **Chat** mode is the same stream with no tools.
+
+Try:
+
+```text
+List this project and read README.md. Tell me the one-line description.
+```
+
+Tokens appear as Ollama generates them. Each tool call shows up as a card with the tool name and the observation (directory listing or file text).
+
+Open another folder with **Open project**, or start Jewbot already pointed at one:
+
+```bash
+JEWBOT_PROJECT_ROOT="$PWD" JEWBOT_MODEL=qwen2.5-coder:7b npm start
+```
+
+`OLLAMA_HOST` defaults to `http://127.0.0.1:11434`. A non-local host (including paid APIs such as `api.openai.com`) is refused unless you set `JEWBOT_ALLOW_PAID=1` after you actually mean to spend money. Leave that unset.
+
+Typecheck and smokes (no Ollama required — the M1 smoke mocks `fetch`):
 
 ```bash
 npm run typecheck
-npm run test:safety
+npm test
 ```
+
+`npm test` runs the safety smoke and `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, and sends one live agent message (it errors cleanly when Ollama is not running).
 
 ## Environment
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Local Ollama base URL |
-| `JEWBOT_MODEL` | `qwen2.5-coder:7b` | Default chat model |
-| `JEWBOT_ALLOW_PAID` | unset/`0` | Must be `1` **and** owner approval for any paid provider |
+| `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama base URL. `127.0.0.1:11434` (no scheme) is accepted. Non-local hosts need `JEWBOT_ALLOW_PAID=1`. |
+| `JEWBOT_MODEL` | `qwen2.5-coder:7b` | Chat model name sent to `/api/chat` |
+| `JEWBOT_PROJECT_ROOT` | process cwd | Directory the agent may list and read. The UI can change it with **Open project**. |
+| `JEWBOT_ALLOW_PAID` | unset/`0` | Must be `1` before any paid or non-local provider host is contacted |
 
 ## Safety (always on)
 
 - Paid / cloud LLM calls blocked unless explicitly enabled
 - Destructive patterns (`rm -rf`, `git push --force`, …) require confirmation
-- File writes jailed to the opened project root
+- File reads and listings are jailed to the opened project root (symlink-resolved) and skip `.gitignore` / secret names (`.env`, keys, `node_modules`, `.git`)
+- File writes still require confirmation (`propose_edit` / `applyEdit`)
 
 ## Reused from JU repos
 

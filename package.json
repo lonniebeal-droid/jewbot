@@ -16,7 +16,10 @@
     "dev": "tsc -w",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "test:safety": "npx --yes tsx scripts/smoke-safety.ts"
+    "test:safety": "npx --yes tsx scripts/smoke-safety.ts",
+    "test:m1": "npx --yes tsx scripts/smoke-m1.ts",
+    "test:ui": "npm run build && JEWBOT_UI_SMOKE=1 electron . --no-sandbox --disable-gpu",
+    "test": "npm run test:safety && npm run test:m1"
   },
   "engines": {
     "node": ">=20"
