@@ -5,9 +5,10 @@
 
 import { chatStream, ChatMessage, defaultOllamaConfig, OllamaConfig } from '../llm';
 import { FileWorkspace } from '../files';
-import { TerminalSession } from '../terminal';
+import { formatTerminalObservation, TerminalResult, TerminalSession } from '../terminal';
 import { SshManager } from '../ssh';
 import { ContextIndexer } from '../context';
+import { checkShellCommand, issueConfirmation } from '../safety';
 
 export type AgentStatus = 'idle' | 'planning' | 'acting' | 'observing' | 'done' | 'blocked';
 
@@ -36,9 +37,16 @@ export type AgentStreamEvent =
   | { type: 'message_done'; text: string }
   | { type: 'tool_call'; name: string; args: Record<string, unknown> }
   | { type: 'tool_result'; name: string; args: Record<string, unknown>; observation: string }
+  | { type: 'terminal_chunk'; stream: 'stdout' | 'stderr'; text: string }
   | { type: 'final'; text: string }
   | { type: 'error'; message: string }
   | { type: 'done'; result: AgentRunResult };
+
+export interface DestructiveConfirmRequest {
+  command: string;
+  reason: string;
+  category: string;
+}
 
 export interface AgentDeps {
   files: FileWorkspace;
@@ -47,6 +55,12 @@ export interface AgentDeps {
   context: ContextIndexer;
   llm?: OllamaConfig;
   maxSteps?: number;
+  /**
+   * Human gate for destructive `run_terminal` commands.
+   * Missing callback or a false result means the command is not executed.
+   * The model cannot satisfy this gate by setting args.approved.
+   */
+  confirmDestructive?: (req: DestructiveConfirmRequest) => Promise<boolean>;
 }
 
 const OBSERVATION_MAX = 12_000;
@@ -55,11 +69,14 @@ const SYSTEM = `You are Jewbot, a local coding agent. $0 spend — Ollama only, 
 Loop: think briefly, ACT with exactly one tool, then you will receive OBSERVE.
 When the goal is satisfied, reply with a line starting with FINAL: and the answer. Do not invent file contents.
 
-Live tools (paths stay inside the project root):
+Live tools (paths stay inside the project root; the shell cwd is the project root):
 - list_dir  {"tool":"list_dir","args":{"path":"."}}
 - read_file {"tool":"read_file","args":{"path":"relative/file.txt"}}
+- run_terminal {"tool":"run_terminal","args":{"command":"echo hello"}}
 
 Put the JSON object on its own line. One tool per turn.
+run_terminal streams stdout and stderr back as OBSERVE. You cannot approve your own command.
+Destructive commands (rm -rf, git push --force, mkfs, dd of=, chmod -R 777 /, and similar) do not run until the owner confirms in the UI. If OBSERVE says BLOCKED, the command did not run — do not claim it did.
 ask_owner pauses for a human. Do not claim a tool ran unless you emitted its JSON.`;
 
 export class AgentLoop {
@@ -168,7 +185,10 @@ export class AgentLoop {
       yield { type: 'status', status: 'acting' };
       yield { type: 'tool_call', name: tool.name, args: tool.args };
 
-      const observation = truncate(await this.dispatch(tool), OBSERVATION_MAX);
+      let rawObservation: string;
+      if (tool.name === 'run_terminal') rawObservation = yield* this.observeTerminal(tool, signal);
+      else rawObservation = await this.dispatch(tool);
+      const observation = truncate(rawObservation, OBSERVATION_MAX);
       this.status = 'observing';
       yield { type: 'status', status: 'observing' };
       yield { type: 'tool_result', name: tool.name, args: tool.args, observation };
@@ -207,33 +227,114 @@ export class AgentLoop {
           const preview = await this.deps.files.proposeEdit(rel, content);
           return preview.unifiedDiff;
         }
-        case 'run_terminal': {
-          const cmd = String(tool.args.command ?? '');
-          const result = await this.deps.terminal.run(cmd, {
-            cwd: this.deps.files.projectRoot,
-            approved: Boolean(tool.args.approved),
-            executionId: tool.args.executionId ? String(tool.args.executionId) : undefined,
-            requireApproval: Boolean(tool.args.requireApproval),
-          });
-          return JSON.stringify(result);
-        }
+        case 'run_terminal':
+          return 'ERROR: run_terminal did not pass the safety gate, so it was not executed.';
         case 'ssh_exec': {
           const host = String(tool.args.host ?? '');
           const cmd = String(tool.args.command ?? '');
-          const result = await this.deps.ssh.exec(host, cmd, {
-            approved: Boolean(tool.args.approved),
-            executionId: tool.args.executionId ? String(tool.args.executionId) : undefined,
-          });
+          const result = await this.deps.ssh.exec(host, cmd, {});
           return JSON.stringify(result);
         }
         case 'ask_owner':
           return String(tool.args.question ?? 'Owner input required');
         default:
-          return `Unknown tool: ${tool.name}. Live tools: list_dir, read_file.`;
+          return `Unknown tool: ${tool.name}. Live tools: list_dir, read_file, run_terminal.`;
       }
     } catch (err) {
       return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
     }
+  }
+
+  /**
+   * Runs `run_terminal` only after the safety gate. Yields stdout/stderr chunks
+   * as they arrive, then returns the observation text for the model.
+   * `args.approved` and `args.executionId` from the model are ignored.
+   */
+  private async *observeTerminal(
+    tool: AgentToolCall,
+    signal?: AbortSignal,
+  ): AsyncGenerator<AgentStreamEvent, string, unknown> {
+    const command = String(tool.args.command ?? '');
+    const decision = checkShellCommand(command);
+    if (!decision.ok && !decision.needsConfirmation) {
+      return `ERROR: ${decision.reason}`;
+    }
+
+    let executionId: string | undefined;
+    if (!decision.ok) {
+      const approved = this.deps.confirmDestructive
+        ? await this.deps.confirmDestructive({
+            command,
+            reason: decision.reason,
+            category: decision.category,
+          })
+        : false;
+      if (!approved || signal?.aborted) {
+        return `BLOCKED: command was not executed. ${decision.reason} The owner did not confirm. Do not retry unless the owner asks.`;
+      }
+      executionId = issueConfirmation(command).executionId;
+    }
+
+    if (signal?.aborted) return 'BLOCKED: cancelled before execution.';
+
+    const queue: AgentStreamEvent[] = [];
+    let wake: (() => void) | null = null;
+    let finished: TerminalResult | null = null;
+    let failed: unknown = null;
+    const notify = () => {
+      const fn = wake;
+      wake = null;
+      fn?.();
+    };
+
+    const pending = this.deps.terminal
+      .run(command, {
+        cwd: this.deps.files.projectRoot,
+        projectRoot: this.deps.files.projectRoot,
+        executionId,
+        signal,
+        onChunk: (chunk) => {
+          queue.push({ type: 'terminal_chunk', stream: chunk.stream, text: chunk.text });
+          notify();
+        },
+      })
+      .then(
+        (result) => {
+          finished = result;
+          notify();
+        },
+        (err: unknown) => {
+          failed = err;
+          notify();
+        },
+      );
+
+    while (true) {
+      while (queue.length) {
+        const ev = queue.shift();
+        if (ev) yield ev;
+      }
+      if (finished || failed) break;
+      await new Promise<void>((resolve) => {
+        if (finished || failed || queue.length) {
+          resolve();
+          return;
+        }
+        wake = resolve;
+      });
+    }
+    try {
+      await pending;
+    } catch (err) {
+      failed = failed ?? err;
+    }
+    if (failed) {
+      const message = failed instanceof Error ? failed.message : String(failed);
+      return `ERROR: ${message}`;
+    }
+    const result = finished;
+    if (!result) return 'ERROR: terminal produced no result';
+    return formatTerminalObservation(result);
   }
 }
 

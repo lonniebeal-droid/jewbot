@@ -12,6 +12,40 @@ interface StreamEvent {
   finalText?: string;
   blockReason?: string;
   steps?: unknown;
+  confirmId?: string;
+  command?: string;
+  reason?: string;
+  category?: string;
+  stream?: 'stdout' | 'stderr';
+}
+
+interface TerminalPanelEvent {
+  type: 'chunk' | 'exit';
+  sessionId: string;
+  stream?: 'stdout' | 'stderr';
+  text?: string;
+  exitCode?: number | null;
+  stdout?: string;
+  stderr?: string;
+  timedOut?: boolean;
+  truncated?: boolean;
+  killed?: boolean;
+  backend?: string;
+}
+
+interface TerminalStartResult {
+  ok: boolean;
+  started: boolean;
+  sessionId?: string;
+  backend?: string;
+  needsConfirmation?: boolean;
+  reason?: string;
+  category?: string;
+  pattern?: string;
+  executionId?: string;
+  exitCode?: number | null;
+  stdout?: string;
+  stderr?: string;
 }
 
 declare global {
@@ -36,7 +70,12 @@ declare global {
       cancelStream: (requestId: string) => void;
       onStreamEvent: (cb: (ev: StreamEvent) => void) => () => void;
       pickProjectRoot: () => Promise<{ canceled: boolean; projectRoot: string }>;
-      terminalRun: (command: string, approved?: boolean, executionId?: string) => Promise<unknown>;
+      terminalStart: (payload: { command: string; executionId?: string }) => Promise<TerminalStartResult>;
+      terminalConfirm: (command: string) => Promise<TerminalStartResult>;
+      terminalKill: (sessionId: string) => Promise<{ killed: boolean }>;
+      terminalRun: (command: string) => Promise<unknown>;
+      confirmReply: (payload: { confirmId: string; approved: boolean }) => void;
+      onTerminalEvent: (cb: (ev: TerminalPanelEvent) => void) => () => void;
       contextSummary: () => Promise<unknown>;
     };
   }

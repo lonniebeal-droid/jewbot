@@ -5,6 +5,11 @@ const sendBtn = document.getElementById('send');
 const stopBtn = document.getElementById('stop');
 const phaseEl = document.getElementById('phase');
 const hintEl = document.getElementById('hint');
+const termOut = document.getElementById('termOut');
+const termCommand = document.getElementById('termCommand');
+const termRun = document.getElementById('termRun');
+const termKill = document.getElementById('termKill');
+const termState = document.getElementById('termState');
 
 let mode = 'agent';
 let chatHistory = [];
@@ -13,6 +18,11 @@ let assistantBody = null;
 let lastAssistantBody = null;
 let assistantText = '';
 let pendingTool = null;
+let activeTermSession = null;
+let termSawChunk = false;
+let confirmChain = Promise.resolve();
+let capturingTerm = false;
+let earlyTermEvents = [];
 
 function rid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -49,7 +59,7 @@ function addMessage(role, text) {
 
 function addToolCard(name, args) {
   const wrap = document.createElement('div');
-  wrap.className = 'tool';
+  wrap.className = 'tool' + (name === 'run_terminal' ? ' tool-terminal' : '');
   const title = document.createElement('div');
   title.className = 'tool-name';
   title.textContent = name;
@@ -81,27 +91,80 @@ function closeAssistant() {
   assistantBody = null;
 }
 
+function setTermState(text) {
+  termState.textContent = text;
+}
+
+function appendTerm(text, kind) {
+  if (termOut.dataset.empty === '1') {
+    termOut.textContent = '';
+    termOut.dataset.empty = '0';
+  }
+  const span = document.createElement('span');
+  span.className = kind || 'stdout';
+  span.textContent = text;
+  termOut.appendChild(span);
+  termOut.scrollTop = termOut.scrollHeight;
+}
+
+function askConfirm(command, reason, category) {
+  const run = () =>
+    new Promise((resolve) => {
+      const modal = document.getElementById('confirmModal');
+      document.getElementById('confirmCategory').textContent = category || 'destructive';
+      document.getElementById('confirmReason').textContent = reason || 'This command is destructive.';
+      document.getElementById('confirmCommand').textContent = command || '';
+      modal.hidden = false;
+      const yes = document.getElementById('confirmYes');
+      const no = document.getElementById('confirmNo');
+      const finish = (ok) => {
+        modal.hidden = true;
+        yes.onclick = null;
+        no.onclick = null;
+        document.removeEventListener('keydown', onKey);
+        resolve(ok);
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          finish(false);
+        }
+      };
+      yes.onclick = () => finish(true);
+      no.onclick = () => finish(false);
+      document.addEventListener('keydown', onKey);
+      no.focus();
+    });
+  const next = confirmChain.then(run, run);
+  confirmChain = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
 async function refresh() {
   const statusEl = document.getElementById('status');
   try {
     const s = await window.jewbot.status();
-    document.getElementById('milestone').textContent = s.milestone || 'M1';
+    document.getElementById('milestone').textContent = s.milestone || 'M2';
     const root = s.projectRoot || '';
     const rootEl = document.getElementById('projectRoot');
     rootEl.textContent = root;
     rootEl.title = root;
     const model = (s.ollama && s.ollama.model) || '';
     const host = (s.ollama && s.ollama.host) || '';
-    document.getElementById('spend').textContent = s.allowPaidApis
-      ? 'Paid APIs enabled'
-      : '$0 · local Ollama only';
+    document.getElementById('spend').textContent = s.allowPaidApis ? 'Paid APIs enabled' : '$0 · local Ollama only';
     const lines = [
       s.ollamaOk ? 'Ollama: reachable' : 'Ollama: not reachable',
       'Host: ' + host,
       'Model: ' + model,
-      'Models: ' + ((s.models && s.models.length) ? s.models.join(', ') : '(none)'),
+      'Models: ' + (s.models && s.models.length ? s.models.join(', ') : '(none)'),
       'Project: ' + root,
       'Spend: ' + (s.spendGate || 'local-only'),
+      '',
+      'Terminal cwd is this project.',
+      'Destructive commands wait for confirmation.',
     ];
     if (s.ollamaError) lines.push('', s.ollamaError);
     if (!s.ollamaOk) {
@@ -117,9 +180,18 @@ function setMode(next) {
   mode = next;
   document.getElementById('modeAgent').classList.toggle('active', mode === 'agent');
   document.getElementById('modeChat').classList.toggle('active', mode === 'chat');
-  hintEl.textContent = mode === 'agent'
-    ? 'Agent streams tokens, then calls list_dir and read_file inside the open project.'
-    : 'Chat streams tokens from Ollama with no tools. History stays in this window.';
+  hintEl.textContent =
+    mode === 'agent'
+      ? 'Agent streams tokens, then calls list_dir, read_file, and run_terminal. Destructive shell commands ask first.'
+      : 'Chat streams tokens from Ollama with no tools. History stays in this window.';
+}
+
+function footerFromObservation(observation) {
+  if (!observation) return '';
+  const lines = String(observation).split('\n');
+  const keep = lines.filter((line) => /^(exit_code|timed_out|truncated|killed|BLOCKED|ERROR):/.test(line) || line.startsWith('BLOCKED:') || line.startsWith('ERROR:'));
+  if (keep.length) return keep.join('\n');
+  return lines.slice(0, 4).join('\n');
 }
 
 function onStreamEvent(ev) {
@@ -130,9 +202,32 @@ function onStreamEvent(ev) {
   else if (ev.type === 'tool_call') {
     closeAssistant();
     pendingTool = addToolCard(ev.name || 'tool', ev.args || {});
-  }   else if (ev.type === 'tool_result' && pendingTool) {
-    const args = pendingTool.dataset.args || '';
-    pendingTool.textContent = args + (ev.observation ? '\n\n' + ev.observation : '');
+  } else if (ev.type === 'terminal_chunk' && pendingTool) {
+    if (pendingTool.dataset.live !== '1') {
+      pendingTool.textContent = (pendingTool.dataset.args || '') + '\n\n';
+      pendingTool.dataset.live = '1';
+    }
+    const span = document.createElement('span');
+    span.className = ev.stream === 'stderr' ? 'stderr' : 'stdout';
+    span.textContent = ev.text || '';
+    pendingTool.appendChild(span);
+    scrollDown();
+  } else if (ev.type === 'confirm_required') {
+    const command = ev.command || '';
+    const confirmId = ev.confirmId;
+    askConfirm(command, ev.reason, ev.category).then((ok) => {
+      if (confirmId && window.jewbot) window.jewbot.confirmReply({ confirmId, approved: ok === true });
+    });
+  } else if (ev.type === 'tool_result' && pendingTool) {
+    if (pendingTool.dataset.live === '1') {
+      const foot = document.createElement('div');
+      foot.className = 'term-foot';
+      foot.textContent = footerFromObservation(ev.observation);
+      pendingTool.appendChild(foot);
+    } else {
+      const args = pendingTool.dataset.args || '';
+      pendingTool.textContent = args + (ev.observation ? '\n\n' + ev.observation : '');
+    }
     pendingTool = null;
     scrollDown();
   } else if (ev.type === 'final') {
@@ -156,6 +251,99 @@ function onStreamEvent(ev) {
     activeRequest = null;
     setBusy(false);
     goalEl.focus();
+  }
+}
+
+function onTerminalEvent(ev) {
+  if (capturingTerm) {
+    earlyTermEvents.push(ev);
+    return;
+  }
+  applyTerminalEvent(ev);
+}
+
+function applyTerminalEvent(ev) {
+  if (!ev || ev.sessionId !== activeTermSession) return;
+  if (ev.type === 'chunk') {
+    termSawChunk = true;
+    appendTerm(ev.text || '', ev.stream === 'stderr' ? 'stderr' : 'stdout');
+  } else if (ev.type === 'exit') {
+    const code = ev.exitCode === null || ev.exitCode === undefined ? 'null' : String(ev.exitCode);
+    const bits = ['exit ' + code];
+    if (ev.killed) bits.push('killed');
+    if (ev.timedOut) bits.push('timed out');
+    if (ev.truncated) bits.push('truncated');
+    appendTerm('\n[' + bits.join(', ') + ']\n', 'term-meta');
+    if (!termSawChunk && ev.stdout) appendTerm(ev.stdout, 'stdout');
+    if (!termSawChunk && ev.stderr) appendTerm(ev.stderr, 'stderr');
+    activeTermSession = null;
+    termSawChunk = false;
+    setTermState('idle');
+    termRun.disabled = false;
+    termKill.disabled = true;
+    termCommand.disabled = false;
+  }
+}
+
+async function runTerminal() {
+  const command = termCommand.value.trim();
+  if (!command || !window.jewbot) return;
+  if (activeTermSession) {
+    appendTerm('\n[not run] a command is still running — Kill it first\n', 'term-meta');
+    return;
+  }
+  termRun.disabled = true;
+  termCommand.disabled = true;
+  let res = await startTerminal(command);
+  if (res && !res.ok && res.needsConfirmation) {
+    const yes = await askConfirm(command, res.reason, res.category);
+    if (!yes) {
+      appendTerm('\n[not run] confirmation cancelled\n', 'term-meta');
+      termRun.disabled = false;
+      termCommand.disabled = false;
+      setTermState('idle');
+      return;
+    }
+    const grant = await window.jewbot.terminalConfirm(command);
+    if (!grant || !grant.executionId) {
+      appendTerm('\n[not run] confirmation was not granted\n', 'term-meta');
+      termRun.disabled = false;
+      termCommand.disabled = false;
+      setTermState('idle');
+      return;
+    }
+    res = await startTerminal(command, grant.executionId);
+  }
+  if (!res || !res.started) {
+    appendTerm('\n[not run] ' + ((res && res.reason) || 'blocked') + '\n', 'term-meta');
+    termRun.disabled = false;
+    termCommand.disabled = false;
+    setTermState('idle');
+  }
+}
+
+async function startTerminal(command, executionId) {
+  earlyTermEvents = [];
+  capturingTerm = true;
+  try {
+    const res = await window.jewbot.terminalStart(executionId ? { command, executionId } : { command });
+    if (!res || !res.ok || !res.sessionId) {
+      capturingTerm = false;
+      earlyTermEvents = [];
+      return res;
+    }
+    activeTermSession = res.sessionId;
+    termSawChunk = false;
+    appendTerm('$ ' + command + '\n', 'term-meta');
+    setTermState('running');
+    termKill.disabled = false;
+    while (earlyTermEvents.length) applyTerminalEvent(earlyTermEvents.shift());
+    capturingTerm = false;
+    return res;
+  } catch (err) {
+    capturingTerm = false;
+    earlyTermEvents = [];
+    throw err;
   }
 }
 
@@ -196,15 +384,28 @@ document.getElementById('openProject').onclick = async () => {
     addMessage('error', String(e));
   }
 };
+document.getElementById('termRun').onclick = () => {
+  void runTerminal();
+};
+document.getElementById('termKill').onclick = () => {
+  if (activeTermSession && window.jewbot) void window.jewbot.terminalKill(activeTermSession);
+};
 goalEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     send();
   }
 });
+termCommand.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    void runTerminal();
+  }
+});
 
 if (window.jewbot && window.jewbot.onStreamEvent) {
   window.jewbot.onStreamEvent(onStreamEvent);
+  if (window.jewbot.onTerminalEvent) window.jewbot.onTerminalEvent(onTerminalEvent);
   refresh();
 } else {
   document.getElementById('status').textContent = 'Open this UI from the Electron app (npm start).';

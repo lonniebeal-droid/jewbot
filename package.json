@@ -18,8 +18,9 @@
     "lint": "tsc --noEmit",
     "test:safety": "npx --yes tsx scripts/smoke-safety.ts",
     "test:m1": "npx --yes tsx scripts/smoke-m1.ts",
+    "test:m2": "npx --yes tsx scripts/smoke-m2.ts",
     "test:ui": "npm run build && JEWBOT_UI_SMOKE=1 electron . --no-sandbox --disable-gpu",
-    "test": "npm run test:safety && npm run test:m1"
+    "test": "npm run test:safety && npm run test:m1 && npm run test:m2"
   },
   "engines": {
     "node": ">=20"

@@ -130,7 +130,7 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 |----|--------|
 | **M0** | Architecture + scaffold + stubs (this commit) |
 | **M1** | Ollama chat streaming + agent loop with read/list tools (**done**) |
-| **M2** | Terminal streaming + Safety destructive detection |
+| **M2** | Terminal streaming + Safety destructive confirmation (**done**) |
 | **M3** | File edit + diff preview apply |
 | **M4** | Context indexer (.gitignore-aware) |
 | **M5** | SSH sessions + remote exec |
