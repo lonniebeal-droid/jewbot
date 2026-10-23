@@ -76,7 +76,7 @@ goal → PLAN (LLM) → ACT (tool call) → OBSERVE (tool result) → …
 
 Tools (M0 stubs → M1+):
 
-- `read_file`, `list_dir`, `search_files`
+- `read_file`, `list_dir`, `search_files` / `search_context`, `find_files`, `get_project_summary` (M4)
 - `propose_edit` / `write_file` / `apply_edit` (unified diff; apply only after owner Accept — M3)
 - `run_terminal` (via Safety)
 - `ssh_exec` (via Safety + session manager)
@@ -105,9 +105,10 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 
 ### 7. Context indexer (`src/modules/context`)
 
-- Walk project tree respecting `.gitignore` (`ignore` package).
-- Produce compact structure summary + optional file snippets for the LLM prompt.
-- Skip secrets patterns (`.env`, `*.pem`, `node_modules`, etc.).
+- Walk the project tree respecting `.gitignore` (including nested files) via the `ignore` package, plus default ignores: `node_modules`, `.git`, `dist`, build caches, binaries, and secrets (`.env` except `.env.example`, keys, `*.pem`).
+- Jail: the walk is realpath-bound to the project root. Symlinks that point outside are not indexed and their targets are not read.
+- APIs: `getProjectSummary`, `findFiles` (substring or glob), `searchContext` (line excerpts). Agent tools: `get_project_summary`, `find_files`, `search_context` (`search_files` alias).
+- Each agent turn and each chat turn gets a compact tree plus a few goal-matched excerpts, not the whole repo.
 
 ### 8. Cascade runner (`src/modules/cascade`)
 
@@ -133,7 +134,7 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 | **M1** | Ollama chat streaming + agent loop with read/list tools (**done**) |
 | **M2** | Terminal streaming + Safety destructive confirmation (**done**) |
 | **M3** | File edit + diff preview apply (**done**) |
-| **M4** | Context indexer (.gitignore-aware) |
+| **M4** | Context indexer (.gitignore-aware) (**done**) |
 | **M5** | SSH sessions + remote exec |
 | **M6** | Cascade runner wired to milestones |
 | **M7** | Polish UI + packaging |
