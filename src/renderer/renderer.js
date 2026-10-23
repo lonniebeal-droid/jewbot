@@ -160,7 +160,7 @@ async function refresh() {
   const statusEl = document.getElementById('status');
   try {
     const s = await window.jewbot.status();
-    document.getElementById('milestone').textContent = s.milestone || 'M3';
+    document.getElementById('milestone').textContent = s.milestone || 'M4';
     const root = s.projectRoot || '';
     const rootEl = document.getElementById('projectRoot');
     rootEl.textContent = root;
@@ -177,6 +177,7 @@ async function refresh() {
       'Spend: ' + (s.spendGate || 'local-only'),
       '',
       'Terminal cwd is this project.',
+      'Context index skips secrets, binaries, and gitignored paths.',
       'File edits show a diff and wait for Accept.',
       'Destructive commands wait for confirmation.',
     ];
@@ -196,8 +197,8 @@ function setMode(next) {
   document.getElementById('modeChat').classList.toggle('active', mode === 'chat');
   hintEl.textContent =
     mode === 'agent'
-      ? 'Agent can list, read, and edit files in this project. Edits show a diff and apply only after Accept. Destructive shell commands ask first.'
-      : 'Chat streams tokens from Ollama with no tools. History stays in this window.';
+      ? 'Agent can list, search, read, and edit files in this project. A compact tree is included; the whole repo is not. Edits show a diff and apply only after Accept. Destructive shell commands ask first.'
+      : 'Chat streams tokens from Ollama with no tools. A compact project snapshot is included; the whole repo is not.';
 }
 
 function renderDiff(pre, unified) {

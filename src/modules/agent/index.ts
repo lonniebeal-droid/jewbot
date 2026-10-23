@@ -8,7 +8,7 @@ import { chatStream, ChatMessage, defaultOllamaConfig, OllamaConfig } from '../l
 import { DiffPreview, EditSpec, FileWorkspace, SecretPathError } from '../files';
 import { formatTerminalObservation, TerminalResult, TerminalSession } from '../terminal';
 import { SshManager } from '../ssh';
-import { ContextIndexer } from '../context';
+import { ContextIndexer, formatFindResult, formatSearchResult } from '../context';
 import { checkShellCommand, issueConfirmation } from '../safety';
 
 export type AgentStatus = 'idle' | 'planning' | 'acting' | 'observing' | 'done' | 'blocked';
@@ -94,6 +94,10 @@ Loop: think briefly, ACT with exactly one tool, then you will receive OBSERVE.
 When the goal is satisfied, reply with a line starting with FINAL: and the answer. Do not invent file contents.
 
 Live tools (paths stay inside the project root; the shell cwd is the project root):
+- get_project_summary {"tool":"get_project_summary","args":{}}
+- find_files {"tool":"find_files","args":{"query":"**/*.ts"}}
+- search_context {"tool":"search_context","args":{"query":"symbol or text","path":"src"}}
+- search_files is an alias of search_context
 - list_dir  {"tool":"list_dir","args":{"path":"."}}
 - read_file {"tool":"read_file","args":{"path":"relative/file.txt"}}
 - write_file {"tool":"write_file","args":{"path":"relative/file.txt","content":"full new file text"}}
@@ -101,6 +105,7 @@ Live tools (paths stay inside the project root; the shell cwd is the project roo
 - propose_edit accepts either content or search/replace (same gate as write_file)
 - run_terminal {"tool":"run_terminal","args":{"command":"echo hello"}}
 
+The user message starts with a compact project tree and, when the goal names a file or symbol, a few excerpts. That is not the whole repo. Secret files are not in the index. Use find_files and search_context before guessing paths.
 Put the JSON object on its own line. One tool per turn.
 write_file, propose_edit, and apply_edit show a unified diff and do not change the file until the owner presses Accept. If OBSERVE says REJECTED or UNCHANGED, nothing was written — do not claim it was. You cannot approve your own edit.
 Secret paths (.env, private keys) are refused until the owner confirms. Do not expect their existing contents in OBSERVE.
@@ -143,9 +148,9 @@ export class AgentLoop {
     const maxSteps = this.deps.maxSteps ?? 12;
     const cfg = this.deps.llm ?? defaultOllamaConfig();
 
-    let summary;
+    let turnContext: string;
     try {
-      summary = await this.deps.context.summarize();
+      turnContext = await this.deps.context.buildTurnContext(goal);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const result: AgentRunResult = { status: 'blocked', steps, blockReason: message };
@@ -158,7 +163,7 @@ export class AgentLoop {
       { role: 'system', content: SYSTEM },
       {
         role: 'user',
-        content: `${this.deps.context.formatForPrompt(summary)}\n\nGoal:\n${goal}`,
+        content: `${turnContext}\n\nGoal:\n${goal}`,
       },
     ];
 
@@ -241,6 +246,22 @@ export class AgentLoop {
   private async dispatch(tool: AgentToolCall, signal?: AbortSignal): Promise<string> {
     try {
       switch (tool.name) {
+        case 'get_project_summary': {
+          const summary = await this.deps.context.getProjectSummary();
+          return this.deps.context.formatForPrompt(summary);
+        }
+        case 'find_files': {
+          const query = String(tool.args.query ?? tool.args.pattern ?? tool.args.glob ?? '');
+          const limit = typeof tool.args.limit === 'number' ? tool.args.limit : undefined;
+          return formatFindResult(await this.deps.context.findFiles(query, { limit }));
+        }
+        case 'search_files':
+        case 'search_context': {
+          const query = String(tool.args.query ?? tool.args.q ?? tool.args.text ?? '');
+          const pathFilter = tool.args.path != null ? String(tool.args.path) : undefined;
+          const limit = typeof tool.args.limit === 'number' ? tool.args.limit : undefined;
+          return formatSearchResult(await this.deps.context.searchContext(query, { path: pathFilter, limit }));
+        }
         case 'list_dir': {
           const rel = String(tool.args.path ?? '.');
           const entries = await this.deps.files.listDir(rel);
@@ -263,7 +284,7 @@ export class AgentLoop {
         case 'ask_owner':
           return String(tool.args.question ?? 'Owner input required');
         default:
-          return `Unknown tool: ${tool.name}. Live tools: list_dir, read_file, write_file, apply_edit, propose_edit, run_terminal.`;
+          return `Unknown tool: ${tool.name}. Live tools: get_project_summary, find_files, search_context, list_dir, read_file, write_file, apply_edit, propose_edit, run_terminal.`;
       }
     } catch (err) {
       return `ERROR: ${err instanceof Error ? err.message : String(err)}`;

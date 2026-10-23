@@ -4,7 +4,7 @@
 
 Terminal control, SSH to your machines (Dell / Pi / Mac), agentic plan→act→observe loop, file edits with diff preview, project-aware context, and cascade execution across milestones.
 
-> **Status:** Milestone **M3** — file edits with a unified diff and an Accept / Reject gate. **M4** (context indexer) is next. SSH sessions are **M5**.
+> **Status:** Milestone **M4** — project-aware context. The agent sees a compact tree and a few relevant excerpts, and can `find_files` / `search_context` without loading the whole repo. **M5** (SSH sessions) is next.
 
 ## Why Jewbot?
 
@@ -38,7 +38,7 @@ npm install
 npm start
 ```
 
-That builds the Electron app and opens the chat window. **Agent** mode streams tokens from Ollama, then runs `list_dir`, `read_file`, `write_file`, `apply_edit`, and `run_terminal` inside the open folder. **Chat** mode is the same stream with no tools.
+That builds the Electron app and opens the chat window. **Agent** mode streams tokens from Ollama, then runs `get_project_summary`, `find_files`, `search_context`, `list_dir`, `read_file`, `write_file`, `apply_edit`, and `run_terminal` inside the open folder. **Chat** mode is the same stream with no tools. Both modes get a compact project snapshot, not a dump of every file.
 
 Try:
 
@@ -74,6 +74,22 @@ Add a "Local-first." line under the title in README.md.
 
 Paths stay inside the open project. `.env` and private keys are refused unless you accept that specific edit (or open the file when the agent tries to read it). `node_modules`, `.git`, and other ignored paths stay closed. A model flag such as `confirmed: true` does not skip Accept.
 
+### Project context
+
+Before each agent turn and each chat turn, Jewbot indexes the open folder. The model receives a short tree and, when your question names a file or a symbol, a few matching excerpts. It does not receive the whole repository.
+
+The agent can also call:
+
+- `get_project_summary` — counts plus the compact tree
+- `find_files` — path substring or glob (`*.ts`, `src/**/*.ts`)
+- `search_context` — case-insensitive text search with line numbers (`search_files` is the same tool)
+
+Skipped by default: anything matched by `.gitignore` (including nested files), `node_modules`, `.git`, `dist`, other build caches, binary files, and secrets (`.env` except `.env.example`, private keys, `*.pem`, credential files). A symlink that points outside the project is not indexed, and its target is not read.
+
+```text
+Where is ContextIndexer defined? Show the file and the line.
+```
+
 ### Destructive commands
 
 Jewbot does not run destructive commands by itself. Patterns such as `rm -rf`, `git push --force` / `git push -f`, `mkfs`, `dd of=` / `dd if=`, `chmod -R 777 /`, `git reset --hard`, and `git clean -fd` open a confirm dialog with the exact command.
@@ -99,7 +115,7 @@ npm run typecheck
 npm test
 ```
 
-`npm test` runs the safety smoke, `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn), `npm run test:m2` (destructive classification, a streamed `echo`, session kill, and `run_terminal` through the confirm gate), and `npm run test:m3` (diff preview, Accept/Reject, undo, secret-path refusal, and jailed writes on a temp directory). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, rejects one diff and accepts then undoes another, runs `echo` in the terminal panel, cancels a destructive confirm, and sends one live agent message (it errors cleanly when Ollama is not running).
+`npm test` runs the safety smoke, `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn), `npm run test:m2` (destructive classification, a streamed `echo`, session kill, and `run_terminal` through the confirm gate), `npm run test:m3` (diff preview, Accept/Reject, undo, secret-path refusal, and jailed writes on a temp directory), and `npm run test:m4` (gitignore-aware index, secret and symlink jail, `find_files` / `search_context`, and a scripted project-aware agent turn). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, rejects one diff and accepts then undoes another, runs `echo` in the terminal panel, cancels a destructive confirm, and sends one live agent message (it errors cleanly when Ollama is not running).
 
 ## Environment
 
@@ -116,6 +132,7 @@ npm test
 - Paid / cloud LLM calls blocked unless explicitly enabled
 - Destructive patterns (`rm -rf`, `git push --force`, …) require confirmation
 - File reads and listings are jailed to the opened project root (symlink-resolved) and skip `.gitignore` / secret names (`.env`, keys, `node_modules`, `.git`)
+- The context index uses that same jail. It does not read outside the project, and it does not put secret or binary files into the prompt
 - File writes (`write_file`, `apply_edit`, `propose_edit`) stay in that jail, show a unified diff, and apply only after Accept. Secret paths need that confirm; ignored directories do not open
 
 ## Reused from JU repos

@@ -24,7 +24,7 @@ const pendingEdits = new Map<string, (accepted: boolean) => void>();
 const undoTargets = new Map<string, FileWorkspace>();
 
 const CHAT_SYSTEM =
-  'You are Jewbot, a local coding assistant running on Ollama. $0 spend — no paid APIs. Be concise and accurate.';
+  'You are Jewbot, a local coding assistant running on Ollama. $0 spend — no paid APIs. Be concise and accurate. The project snapshot below is a compact tree plus a few excerpts, not the whole repo. Secret files are omitted.';
 
 function resolveInitialRoot(): string {
   const env = process.env.JEWBOT_PROJECT_ROOT?.trim();
@@ -232,7 +232,7 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
     const ok =
       report.hasBridge &&
       report.missing.length === 0 &&
-      report.milestone === 'M3' &&
+      report.milestone === 'M4' &&
       !!report.projectRoot &&
       report.sendEnabled &&
       report.streamed &&
@@ -291,7 +291,7 @@ app.whenReady().then(() => {
     const probe = await probeOllama(cfg);
     return {
       version: app.getVersion(),
-      milestone: 'M3',
+      milestone: 'M4',
       projectRoot,
       allowPaidApis: safety.allowPaidApis,
       spendGate: spend.ok ? 'local-only' : 'paid-blocked',
@@ -408,7 +408,15 @@ app.whenReady().then(() => {
       return;
     }
     const ctrl = track(req.requestId);
-    const messages: ChatMessage[] = [{ role: 'system', content: CHAT_SYSTEM }, ...req.messages];
+    let system = CHAT_SYSTEM;
+    try {
+      const lastUser = [...req.messages].reverse().find((message) => message.role === 'user');
+      const snapshot = await context.buildTurnContext(lastUser?.content ?? '');
+      if (snapshot.trim()) system = `${CHAT_SYSTEM}\n\n${snapshot}`;
+    } catch (err) {
+      console.warn(`context index skipped: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const messages: ChatMessage[] = [{ role: 'system', content: system }, ...req.messages];
     try {
       let text = '';
       for await (const token of chatStream(messages, defaultOllamaConfig(), { signal: ctrl.signal })) {
