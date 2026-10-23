@@ -17,6 +17,12 @@ export interface StreamEvent {
   reason?: string;
   category?: string;
   stream?: 'stdout' | 'stderr';
+  editId?: string;
+  path?: string;
+  unifiedDiff?: string;
+  created?: boolean;
+  secret?: boolean;
+  tool?: string;
 }
 
 export interface TerminalPanelEvent {
@@ -64,6 +70,9 @@ contextBridge.exposeInMainWorld('jewbot', {
   terminalKill: (sessionId: string) => ipcRenderer.invoke('jewbot:terminalKill', sessionId) as Promise<{ killed: boolean }>,
   terminalRun: (command: string) => ipcRenderer.invoke('jewbot:terminalRun', command),
   confirmReply: (payload: { confirmId: string; approved: boolean }) => ipcRenderer.send('jewbot:confirmReply', payload),
+  editReply: (payload: { editId: string; accepted: boolean }) => ipcRenderer.send('jewbot:editReply', payload),
+  editUndo: (editId: string) =>
+    ipcRenderer.invoke('jewbot:editUndo', editId) as Promise<{ ok: boolean; filePath?: string; action?: string; reason?: string }>,
   onTerminalEvent: (cb: (ev: TerminalPanelEvent) => void) => {
     const listener = (_event: IpcRendererEvent, data: TerminalPanelEvent) => cb(data);
     ipcRenderer.on('jewbot:terminalEvent', listener);

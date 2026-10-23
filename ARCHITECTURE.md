@@ -77,7 +77,7 @@ goal → PLAN (LLM) → ACT (tool call) → OBSERVE (tool result) → …
 Tools (M0 stubs → M1+):
 
 - `read_file`, `list_dir`, `search_files`
-- `propose_edit` (diff preview; apply only after confirm or cascade policy)
+- `propose_edit` / `write_file` / `apply_edit` (unified diff; apply only after owner Accept — M3)
 - `run_terminal` (via Safety)
 - `ssh_exec` (via Safety + session manager)
 - `ask_owner` (pause cascade for human gate)
@@ -100,7 +100,8 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 
 - Read/write within project root only (path jail).
 - Unified diff via `diff` package before apply.
-- Renderer shows preview; apply is gated by Safety / user confirm.
+- Renderer shows the diff; apply waits for Accept (M3). Reject writes nothing. Undo restores the previous bytes.
+- Secret paths (`.env`, keys) stay closed unless the owner accepts that open. `node_modules`, `.git`, and other ignored paths do not open.
 
 ### 7. Context indexer (`src/modules/context`)
 
@@ -131,7 +132,7 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 | **M0** | Architecture + scaffold + stubs (this commit) |
 | **M1** | Ollama chat streaming + agent loop with read/list tools (**done**) |
 | **M2** | Terminal streaming + Safety destructive confirmation (**done**) |
-| **M3** | File edit + diff preview apply |
+| **M3** | File edit + diff preview apply (**done**) |
 | **M4** | Context indexer (.gitignore-aware) |
 | **M5** | SSH sessions + remote exec |
 | **M6** | Cascade runner wired to milestones |

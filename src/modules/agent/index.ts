@@ -1,10 +1,11 @@
 /**
  * Agentic loop: plan → act → observe → iterate (Cursor-style).
- * M1 live tools: list_dir, read_file. Other tools stay wired but gated by Safety.
+ * Live tools: list_dir, read_file, write_file / propose_edit / apply_edit, run_terminal.
+ * File writes preview a diff and land only after the owner accepts.
  */
 
 import { chatStream, ChatMessage, defaultOllamaConfig, OllamaConfig } from '../llm';
-import { FileWorkspace } from '../files';
+import { DiffPreview, EditSpec, FileWorkspace, SecretPathError } from '../files';
 import { formatTerminalObservation, TerminalResult, TerminalSession } from '../terminal';
 import { SshManager } from '../ssh';
 import { ContextIndexer } from '../context';
@@ -48,6 +49,20 @@ export interface DestructiveConfirmRequest {
   category: string;
 }
 
+export interface EditConfirmRequest {
+  editId: string;
+  path: string;
+  unifiedDiff: string;
+  created: boolean;
+  secret: boolean;
+  tool: string;
+}
+
+export interface SecretConfirmRequest {
+  path: string;
+  reason: string;
+}
+
 export interface AgentDeps {
   files: FileWorkspace;
   terminal: TerminalSession;
@@ -61,6 +76,15 @@ export interface AgentDeps {
    * The model cannot satisfy this gate by setting args.approved.
    */
   confirmDestructive?: (req: DestructiveConfirmRequest) => Promise<boolean>;
+  /**
+   * Human gate for file writes. Missing callback or false means nothing is written.
+   * The model cannot satisfy this gate by setting args.confirmed / args.approved.
+   */
+  confirmEdit?: (req: EditConfirmRequest) => Promise<boolean>;
+  /** Human gate before reading .env / key material. Missing callback means refuse. */
+  confirmSecret?: (req: SecretConfirmRequest) => Promise<boolean>;
+  /** Fired after a write lands, so the UI can undo that edit id on this workspace. */
+  onEditApplied?: (editId: string, workspace: FileWorkspace) => void;
 }
 
 const OBSERVATION_MAX = 12_000;
@@ -72,9 +96,14 @@ When the goal is satisfied, reply with a line starting with FINAL: and the answe
 Live tools (paths stay inside the project root; the shell cwd is the project root):
 - list_dir  {"tool":"list_dir","args":{"path":"."}}
 - read_file {"tool":"read_file","args":{"path":"relative/file.txt"}}
+- write_file {"tool":"write_file","args":{"path":"relative/file.txt","content":"full new file text"}}
+- apply_edit {"tool":"apply_edit","args":{"path":"relative/file.txt","search":"exact unique text","replace":"new text"}}
+- propose_edit accepts either content or search/replace (same gate as write_file)
 - run_terminal {"tool":"run_terminal","args":{"command":"echo hello"}}
 
 Put the JSON object on its own line. One tool per turn.
+write_file, propose_edit, and apply_edit show a unified diff and do not change the file until the owner presses Accept. If OBSERVE says REJECTED or UNCHANGED, nothing was written — do not claim it was. You cannot approve your own edit.
+Secret paths (.env, private keys) are refused until the owner confirms. Do not expect their existing contents in OBSERVE.
 run_terminal streams stdout and stderr back as OBSERVE. You cannot approve your own command.
 Destructive commands (rm -rf, git push --force, mkfs, dd of=, chmod -R 777 /, and similar) do not run until the owner confirms in the UI. If OBSERVE says BLOCKED, the command did not run — do not claim it did.
 ask_owner pauses for a human. Do not claim a tool ran unless you emitted its JSON.`;
@@ -187,7 +216,7 @@ export class AgentLoop {
 
       let rawObservation: string;
       if (tool.name === 'run_terminal') rawObservation = yield* this.observeTerminal(tool, signal);
-      else rawObservation = await this.dispatch(tool);
+      else rawObservation = await this.dispatch(tool, signal);
       const observation = truncate(rawObservation, OBSERVATION_MAX);
       this.status = 'observing';
       yield { type: 'status', status: 'observing' };
@@ -209,7 +238,7 @@ export class AgentLoop {
     yield finish(result);
   }
 
-  private async dispatch(tool: AgentToolCall): Promise<string> {
+  private async dispatch(tool: AgentToolCall, signal?: AbortSignal): Promise<string> {
     try {
       switch (tool.name) {
         case 'list_dir': {
@@ -217,16 +246,12 @@ export class AgentLoop {
           const entries = await this.deps.files.listDir(rel);
           return entries.length ? entries.join('\n') : '(empty directory)';
         }
-        case 'read_file': {
-          const rel = String(tool.args.path ?? '');
-          return await this.deps.files.read(rel);
-        }
-        case 'propose_edit': {
-          const rel = String(tool.args.path ?? '');
-          const content = String(tool.args.content ?? '');
-          const preview = await this.deps.files.proposeEdit(rel, content);
-          return preview.unifiedDiff;
-        }
+        case 'read_file':
+          return await this.observeRead(tool, signal);
+        case 'propose_edit':
+        case 'write_file':
+        case 'apply_edit':
+          return await this.observeEdit(tool, signal);
         case 'run_terminal':
           return 'ERROR: run_terminal did not pass the safety gate, so it was not executed.';
         case 'ssh_exec': {
@@ -238,11 +263,103 @@ export class AgentLoop {
         case 'ask_owner':
           return String(tool.args.question ?? 'Owner input required');
         default:
-          return `Unknown tool: ${tool.name}. Live tools: list_dir, read_file, run_terminal.`;
+          return `Unknown tool: ${tool.name}. Live tools: list_dir, read_file, write_file, apply_edit, propose_edit, run_terminal.`;
       }
     } catch (err) {
       return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
     }
+  }
+
+  private async observeRead(tool: AgentToolCall, signal?: AbortSignal): Promise<string> {
+    const rel = String(tool.args.path ?? '');
+    try {
+      return await this.deps.files.read(rel);
+    } catch (err) {
+      if (!(err instanceof SecretPathError)) {
+        return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      if (signal?.aborted || !this.deps.confirmSecret) {
+        return `REFUSED: secret path ${err.rel} was not opened. The owner did not confirm. Do not retry unless the owner asks.`;
+      }
+      const approved = await this.deps.confirmSecret({ path: err.rel, reason: err.message });
+      if (!approved || signal?.aborted) {
+        return `REFUSED: secret path ${err.rel} was not opened. The owner did not confirm. Do not retry unless the owner asks.`;
+      }
+      try {
+        return await this.deps.files.read(rel, { allowSecret: true });
+      } catch (inner) {
+        return `ERROR: ${inner instanceof Error ? inner.message : String(inner)}`;
+      }
+    }
+  }
+
+  /**
+   * Preview a write, ask the owner, and apply only when they accept.
+   * args.confirmed, args.approved, and args.allowSecret from the model are ignored.
+   */
+  private async observeEdit(tool: AgentToolCall, signal?: AbortSignal): Promise<string> {
+    const rel = String(tool.args.path ?? '').trim();
+    if (!rel) return 'ERROR: edit requires a path';
+    let spec: EditSpec;
+    try {
+      spec = specFromArgs(tool.args);
+    } catch (err) {
+      return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
+    }
+
+    let preview: DiffPreview;
+    try {
+      preview = await this.deps.files.previewEdit(rel, spec);
+    } catch (err) {
+      if (!(err instanceof SecretPathError)) {
+        return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      if (!this.deps.confirmEdit) {
+        return `REFUSED: secret path ${err.rel} was not opened. Nothing was written.`;
+      }
+      try {
+        preview = await this.deps.files.previewEdit(rel, spec, { allowSecret: true });
+      } catch (inner) {
+        return `ERROR: ${inner instanceof Error ? inner.message : String(inner)}`;
+      }
+    }
+
+    if (preview.unchanged) {
+      return `UNCHANGED: ${preview.filePath} already has the proposed contents. Nothing was written.`;
+    }
+    if (signal?.aborted) return 'REJECTED: cancelled before apply. Nothing was written.';
+
+    let accepted = false;
+    try {
+      accepted = this.deps.confirmEdit
+        ? await this.deps.confirmEdit({
+            editId: preview.editId,
+            path: preview.filePath,
+            unifiedDiff: preview.unifiedDiff,
+            created: preview.created,
+            secret: preview.secret,
+            tool: tool.name,
+          })
+        : false;
+    } catch (err) {
+      return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    if (signal?.aborted) return 'REJECTED: cancelled before apply. Nothing was written.';
+    if (!accepted) {
+      const diff = preview.secret ? '' : `\n${preview.unifiedDiff}`;
+      return `REJECTED: edit of ${preview.filePath} was not applied. The owner did not accept. Nothing was written.${diff}`;
+    }
+
+    try {
+      await this.deps.files.applyEdit(preview, true, { allowSecret: preview.secret });
+    } catch (err) {
+      return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    this.deps.onEditApplied?.(preview.editId, this.deps.files);
+    if (preview.secret) {
+      return `APPLIED: wrote secret path ${preview.filePath}. Existing contents were not included in this observation. The owner accepted the diff.`;
+    }
+    return `APPLIED:\n${preview.unifiedDiff}`;
   }
 
   /**
@@ -336,6 +453,22 @@ export class AgentLoop {
     if (!result) return 'ERROR: terminal produced no result';
     return formatTerminalObservation(result);
   }
+}
+
+export function specFromArgs(args: Record<string, unknown>): EditSpec {
+  const search = typeof args.search === 'string' ? args.search : typeof args.old === 'string' ? args.old : undefined;
+  const replace = typeof args.replace === 'string' ? args.replace : typeof args.new === 'string' ? args.new : undefined;
+  const content =
+    typeof args.content === 'string' ? args.content : typeof args.contents === 'string' ? args.contents : undefined;
+  if (search !== undefined && content !== undefined) {
+    throw new Error('Provide either content or search/replace, not both');
+  }
+  if (search !== undefined) {
+    if (replace === undefined) throw new Error('replace text is required when search is set');
+    return { search, replace };
+  }
+  if (content === undefined) throw new Error('Edit needs content or search text');
+  return { content };
 }
 
 export function parseToolCall(text: string): AgentToolCall | null {

@@ -4,7 +4,7 @@
 
 Terminal control, SSH to your machines (Dell / Pi / Mac), agentic plan→act→observe loop, file edits with diff preview, project-aware context, and cascade execution across milestones.
 
-> **Status:** Milestone **M2** — local terminal streaming plus a confirmation dialog for destructive commands. **M3** (file edit + diff preview) is next. SSH sessions are **M5**.
+> **Status:** Milestone **M3** — file edits with a unified diff and an Accept / Reject gate. **M4** (context indexer) is next. SSH sessions are **M5**.
 
 ## Why Jewbot?
 
@@ -38,7 +38,7 @@ npm install
 npm start
 ```
 
-That builds the Electron app and opens the chat window. **Agent** mode streams tokens from Ollama, then runs `list_dir`, `read_file`, and `run_terminal` inside the open folder. **Chat** mode is the same stream with no tools.
+That builds the Electron app and opens the chat window. **Agent** mode streams tokens from Ollama, then runs `list_dir`, `read_file`, `write_file`, `apply_edit`, and `run_terminal` inside the open folder. **Chat** mode is the same stream with no tools.
 
 Try:
 
@@ -63,6 +63,16 @@ Run echo jewbot in the terminal and tell me what it printed.
 ```
 
 `JEWBOT_TERMINAL_BACKEND=child_process` is the default (separate stdout and stderr). If the optional `node-pty` module is installed, `JEWBOT_TERMINAL_BACKEND=pty` uses a PTY instead; a PTY merges both streams into stdout.
+
+### Edit a file
+
+Ask the agent to change a file. It calls `write_file` (full contents) or `apply_edit` (one unique search/replace). Jewbot shows a unified diff and does **not** write until you press **Accept**. **Reject** (or Escape) leaves the file untouched. **Undo** puts the previous bytes back.
+
+```text
+Add a "Local-first." line under the title in README.md.
+```
+
+Paths stay inside the open project. `.env` and private keys are refused unless you accept that specific edit (or open the file when the agent tries to read it). `node_modules`, `.git`, and other ignored paths stay closed. A model flag such as `confirmed: true` does not skip Accept.
 
 ### Destructive commands
 
@@ -89,7 +99,7 @@ npm run typecheck
 npm test
 ```
 
-`npm test` runs the safety smoke, `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn), and `npm run test:m2` (destructive classification, a streamed `echo`, session kill, and `run_terminal` through the confirm gate). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, runs `echo` in the terminal panel, cancels a destructive confirm, and sends one live agent message (it errors cleanly when Ollama is not running).
+`npm test` runs the safety smoke, `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn), `npm run test:m2` (destructive classification, a streamed `echo`, session kill, and `run_terminal` through the confirm gate), and `npm run test:m3` (diff preview, Accept/Reject, undo, secret-path refusal, and jailed writes on a temp directory). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, rejects one diff and accepts then undoes another, runs `echo` in the terminal panel, cancels a destructive confirm, and sends one live agent message (it errors cleanly when Ollama is not running).
 
 ## Environment
 
@@ -106,7 +116,7 @@ npm test
 - Paid / cloud LLM calls blocked unless explicitly enabled
 - Destructive patterns (`rm -rf`, `git push --force`, …) require confirmation
 - File reads and listings are jailed to the opened project root (symlink-resolved) and skip `.gitignore` / secret names (`.env`, keys, `node_modules`, `.git`)
-- File writes still require confirmation (`propose_edit` / `applyEdit`)
+- File writes (`write_file`, `apply_edit`, `propose_edit`) stay in that jail, show a unified diff, and apply only after Accept. Secret paths need that confirm; ignored directories do not open
 
 ## Reused from JU repos
 

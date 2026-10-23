@@ -1,13 +1,14 @@
 import { randomUUID } from 'crypto';
 import { app, BrowserWindow, dialog, ipcMain, WebContents } from 'electron';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { chatStream, ChatMessage, defaultOllamaConfig, probeOllama } from '../modules/llm';
 import { defaultTerminal, TerminalStartResult } from '../modules/terminal';
 import { defaultSshManager } from '../modules/ssh';
 import { FileWorkspace } from '../modules/files';
 import { ContextIndexer } from '../modules/context';
-import { AgentLoop, AgentStreamEvent, DestructiveConfirmRequest } from '../modules/agent';
+import { AgentLoop, AgentStreamEvent, DestructiveConfirmRequest, EditConfirmRequest } from '../modules/agent';
 import { CascadeRunner, M0_MILESTONE } from '../modules/cascade';
 import { assertLocalSpendOnly, defaultSafetyConfig, issueConfirmation, SafetyDecision } from '../modules/safety';
 
@@ -19,6 +20,8 @@ let context = new ContextIndexer(projectRoot);
 const cascade = new CascadeRunner();
 const inflight = new Map<string, AbortController>();
 const pendingConfirms = new Map<string, (approved: boolean) => void>();
+const pendingEdits = new Map<string, (accepted: boolean) => void>();
+const undoTargets = new Map<string, FileWorkspace>();
 
 const CHAT_SYSTEM =
   'You are Jewbot, a local coding assistant running on Ollama. $0 spend — no paid APIs. Be concise and accurate.';
@@ -69,14 +72,36 @@ function createWindow(): void {
   }
 }
 
+function editSmokeFilesOk(): boolean {
+  try {
+    const raw = fs.readFileSync('/tmp/jewbot-m3-ui-edit.jsonl', 'utf8').trim();
+    const rows = raw.split('\n').map(
+      (line) => JSON.parse(line) as { goal: string; accepted: boolean; body: string; tmp: string },
+    );
+    const reject = rows.find((row) => row.goal === 'reject');
+    const accept = rows.find((row) => row.goal === 'accept');
+    if (!reject || !accept) return false;
+    if (reject.accepted !== false || reject.body !== 'old\n') return false;
+    if (accept.accepted !== true || accept.body !== 'hello from m3\n') return false;
+    return fs.readFileSync(path.join(accept.tmp, 'note.txt'), 'utf8') === 'old\n';
+  } catch {
+    return false;
+  }
+}
+
 async function runUiSmoke(win: BrowserWindow): Promise<void> {
   try {
+    try {
+      fs.unlinkSync('/tmp/jewbot-m3-ui-edit.jsonl');
+    } catch {
+      // no previous edit smoke receipt
+    }
     const report = (await win.webContents.executeJavaScript(`
       (async () => {
-        const ids = ['milestone','goal','send','stop','transcript','status','openProject','modeAgent','modeChat','projectRoot','termCommand','termRun','termKill','termOut','confirmModal','confirmYes','confirmNo','confirmCommand'];
+        const ids = ['milestone','goal','send','stop','transcript','status','openProject','modeAgent','modeChat','projectRoot','termCommand','termRun','termKill','termOut','confirmModal','confirmYes','confirmNo','confirmCommand','confirmBlurb'];
         const missing = ids.filter((id) => !document.getElementById(id));
         const bridge = window.jewbot || {};
-        const hasBridge = ['status','startAgent','startChat','cancelStream','onStreamEvent','pickProjectRoot','terminalStart','terminalConfirm','terminalKill','confirmReply','onTerminalEvent'].every((k) => typeof bridge[k] === 'function');
+        const hasBridge = ['status','startAgent','startChat','cancelStream','onStreamEvent','pickProjectRoot','terminalStart','terminalConfirm','terminalKill','confirmReply','onTerminalEvent','editReply','editUndo'].every((k) => typeof bridge[k] === 'function');
         let status = null;
         let statusError = null;
         try { status = await window.jewbot.status(); }
@@ -99,6 +124,35 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
         }
         await sendAndWait('__smoke__', 5000);
         const afterSmoke = document.getElementById('transcript').innerText;
+        async function runEditSmoke(goal, accept) {
+          document.getElementById('goal').value = goal;
+          document.getElementById('send').click();
+          const before = document.querySelectorAll('.diff-card').length;
+          const shown = await waitFor(() => document.querySelectorAll('.diff-card').length > before, 5000);
+          const cards = document.querySelectorAll('.diff-card');
+          const card = cards[cards.length - 1];
+          const diffText = card ? card.innerText : '';
+          const button = card ? card.querySelector(accept ? '.diff-accept' : '.diff-reject') : null;
+          if (button) button.click();
+          const marked = await waitFor(() => {
+            const status = card && card.querySelector('.diff-status');
+            const text = status ? status.textContent : '';
+            return accept ? text.indexOf('Applied') >= 0 : text.indexOf('Rejected') >= 0;
+          }, 5000);
+          let undone = false;
+          if (accept && card) {
+            const undo = card.querySelector('.diff-undo');
+            if (undo) undo.click();
+            undone = await waitFor(() => {
+              const status = card.querySelector('.diff-status');
+              return !!(status && status.textContent.indexOf('Undone') >= 0);
+            }, 4000);
+          }
+          const idle = await waitFor(() => document.getElementById('send').disabled === false, 4000);
+          return { shown, diffText, marked, undone, idle };
+        }
+        const editReject = await runEditSmoke('__smoke_edit_reject__', false);
+        const editAccept = await runEditSmoke('__smoke_edit__', true);
         await sendAndWait('ping', 20000);
         async function waitFor(pred, ms) {
           const deadline = Date.now() + ms;
@@ -142,6 +196,11 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
           blockedStarted: !!(blocked && blocked.started),
           blockedNeedsConfirm: !!(blocked && blocked.needsConfirmation),
           termOut: termAfterCancel.slice(0, 500),
+          editRejectShown: !!(editReject && editReject.shown && editReject.diffText.indexOf('hello from m3') >= 0 && editReject.diffText.indexOf('old') >= 0),
+          editRejectMarked: !!(editReject && editReject.marked && editReject.idle),
+          editAcceptShown: !!(editAccept && editAccept.shown && editAccept.diffText.indexOf('hello from m3') >= 0),
+          editAcceptMarked: !!(editAccept && editAccept.marked),
+          editAcceptUndone: !!(editAccept && editAccept.undone),
         };
       })()
     `)) as {
@@ -164,11 +223,16 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
       blockedStarted: boolean;
       blockedNeedsConfirm: boolean;
       termOut: string;
+      editRejectShown: boolean;
+      editRejectMarked: boolean;
+      editAcceptShown: boolean;
+      editAcceptMarked: boolean;
+      editAcceptUndone: boolean;
     };
     const ok =
       report.hasBridge &&
       report.missing.length === 0 &&
-      report.milestone === 'M2' &&
+      report.milestone === 'M3' &&
       !!report.projectRoot &&
       report.sendEnabled &&
       report.streamed &&
@@ -181,6 +245,12 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
       report.cancelNoted &&
       report.blockedStarted === false &&
       report.blockedNeedsConfirm === true &&
+      report.editRejectShown &&
+      report.editRejectMarked &&
+      report.editAcceptShown &&
+      report.editAcceptMarked &&
+      report.editAcceptUndone &&
+      editSmokeFilesOk() &&
       (report.ollamaOk || report.transcript.includes('Cannot reach Ollama'));
     console.log(`UI_SMOKE ${JSON.stringify(report)}`);
     fs.writeFileSync('/tmp/jewbot-ui-smoke.json', JSON.stringify({ ok, report }, null, 2));
@@ -221,7 +291,7 @@ app.whenReady().then(() => {
     const probe = await probeOllama(cfg);
     return {
       version: app.getVersion(),
-      milestone: 'M2',
+      milestone: 'M3',
       projectRoot,
       allowPaidApis: safety.allowPaidApis,
       spendGate: spend.ok ? 'local-only' : 'paid-blocked',
@@ -269,6 +339,16 @@ app.whenReady().then(() => {
       send(event.sender, { requestId, type: 'done', status: 'blocked' });
       return;
     }
+    if (process.env.JEWBOT_UI_SMOKE === '1' && (req.goal === '__smoke_edit__' || req.goal === '__smoke_edit_reject__')) {
+      try {
+        await runUiEditSmoke(event.sender, req.requestId, req.goal === '__smoke_edit__');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        send(event.sender, { requestId: req.requestId, type: 'error', message });
+        send(event.sender, { requestId: req.requestId, type: 'done', status: 'blocked', blockReason: message });
+      }
+      return;
+    }
     if (process.env.JEWBOT_UI_SMOKE === '1' && req.goal === '__smoke__') {
       const fake: AgentStreamEvent[] = [
         { type: 'status', status: 'planning' },
@@ -291,6 +371,17 @@ app.whenReady().then(() => {
       context,
       confirmDestructive: (confirmReq) =>
         requestOwnerConfirm(event.sender, req.requestId, confirmReq, ctrl.signal),
+      confirmEdit: (editReq) => requestEditDecision(event.sender, req.requestId, editReq, ctrl.signal),
+      confirmSecret: (secretReq) =>
+        requestOwnerConfirm(
+          event.sender,
+          req.requestId,
+          { command: secretReq.path, reason: secretReq.reason, category: 'secret_path' },
+          ctrl.signal,
+        ),
+      onEditApplied: (editId, workspace) => {
+        undoTargets.set(editId, workspace);
+      },
     });
     try {
       for await (const ev of agent.runStream(req.goal, ctrl.signal)) {
@@ -346,6 +437,25 @@ app.whenReady().then(() => {
     const finish = pendingConfirms.get(reply.confirmId);
     if (!finish) return;
     finish(reply.approved);
+  });
+
+  ipcMain.on('jewbot:editReply', (_event, payload: unknown) => {
+    const reply = asEditReply(payload);
+    if (!reply) return;
+    const finish = pendingEdits.get(reply.editId);
+    if (!finish) return;
+    finish(reply.accepted);
+  });
+
+  ipcMain.handle('jewbot:editUndo', async (_event, editId: unknown) => {
+    if (typeof editId !== 'string' || !editId || editId.length > 80) return { ok: false, reason: 'Invalid edit' };
+    const ws = undoTargets.get(editId) ?? files;
+    try {
+      const result = await ws.undoEdit(editId);
+      return { ok: true, filePath: result.filePath, action: result.action };
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('jewbot:terminalStart', async (event, payload: unknown) => {
@@ -468,9 +578,94 @@ app.on('window-all-closed', () => {
   inflight.clear();
   for (const finish of pendingConfirms.values()) finish(false);
   pendingConfirms.clear();
+  for (const finish of pendingEdits.values()) finish(false);
+  pendingEdits.clear();
   defaultTerminal.killAll();
   if (process.platform !== 'darwin') app.quit();
 });
+
+async function runUiEditSmoke(sender: WebContents, requestId: string, acceptGoal: boolean): Promise<void> {
+  const tmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'jewbot-m3-ui-'));
+  const ws = new FileWorkspace(tmp);
+  const note = path.join(tmp, 'note.txt');
+  await fs.promises.writeFile(note, 'old\n');
+  const preview = await ws.proposeEdit('note.txt', 'hello from m3\n');
+  undoTargets.set(preview.editId, ws);
+  send(sender, { requestId, type: 'status', status: 'acting' });
+  send(sender, {
+    requestId,
+    type: 'tool_call',
+    name: 'write_file',
+    args: { path: 'note.txt', content: 'hello from m3\n' },
+  });
+  const accepted = await requestEditDecision(
+    sender,
+    requestId,
+    {
+      editId: preview.editId,
+      path: preview.filePath,
+      unifiedDiff: preview.unifiedDiff,
+      created: preview.created,
+      secret: preview.secret,
+      tool: 'write_file',
+    },
+    new AbortController().signal,
+  );
+  if (accepted) await ws.applyEdit(preview, true);
+  const body = await fs.promises.readFile(note, 'utf8');
+  await fs.promises.appendFile(
+    '/tmp/jewbot-m3-ui-edit.jsonl',
+    JSON.stringify({ goal: acceptGoal ? 'accept' : 'reject', accepted, body, tmp, editId: preview.editId }) + '\n',
+  );
+  const observation = accepted
+    ? `APPLIED:\n${preview.unifiedDiff}`
+    : 'REJECTED: edit of note.txt was not applied. The owner did not accept. Nothing was written.';
+  send(sender, {
+    requestId,
+    type: 'tool_result',
+    name: 'write_file',
+    args: { path: 'note.txt' },
+    observation,
+  });
+  send(sender, { requestId, type: 'done', status: 'done', finalText: accepted ? 'applied' : 'rejected' });
+}
+
+function requestEditDecision(
+  sender: WebContents,
+  requestId: string,
+  req: EditConfirmRequest,
+  signal: AbortSignal,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (accepted: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      pendingEdits.delete(req.editId);
+      signal.removeEventListener('abort', onAbort);
+      resolve(accepted === true);
+    };
+    const onAbort = () => finish(false);
+    const timer = setTimeout(() => finish(false), process.env.JEWBOT_UI_SMOKE === '1' ? 8_000 : 120_000);
+    pendingEdits.set(req.editId, finish);
+    if (signal.aborted) {
+      finish(false);
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+    send(sender, {
+      requestId,
+      type: 'edit_preview',
+      editId: req.editId,
+      path: req.path,
+      unifiedDiff: req.unifiedDiff,
+      created: req.created,
+      secret: req.secret,
+      tool: req.tool,
+    });
+  });
+}
 
 function requestOwnerConfirm(
   sender: WebContents,
@@ -532,6 +727,13 @@ function asTerminalStart(v: unknown): { command: string; executionId?: string } 
   if (typeof o.command !== 'string' || !o.command.trim() || o.command.length > 4000) return null;
   if (o.executionId !== undefined && (typeof o.executionId !== 'string' || o.executionId.length > 80)) return null;
   return { command: o.command, executionId: typeof o.executionId === 'string' ? o.executionId : undefined };
+}
+
+function asEditReply(v: unknown): { editId: string; accepted: boolean } | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o.editId !== 'string' || !o.editId || o.editId.length > 80) return null;
+  return { editId: o.editId, accepted: o.accepted === true };
 }
 
 function asConfirmReply(v: unknown): { confirmId: string; approved: boolean } | null {

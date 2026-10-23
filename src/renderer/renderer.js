@@ -111,14 +111,27 @@ function askConfirm(command, reason, category) {
   const run = () =>
     new Promise((resolve) => {
       const modal = document.getElementById('confirmModal');
+      const title = document.getElementById('confirmTitle');
+      const blurb = document.getElementById('confirmBlurb');
+      const yes = document.getElementById('confirmYes');
+      const secret = category === 'secret_path';
+      title.textContent = secret ? 'Open secret file?' : 'Confirm destructive command';
+      yes.textContent = secret ? 'Open' : 'Run anyway';
+      yes.className = secret ? '' : 'danger';
+      blurb.textContent = secret
+        ? 'Jewbot will not read this secret unless you open it. Cancel leaves it unread.'
+        : 'Jewbot will not run this unless you confirm. Cancel leaves it unrun.';
       document.getElementById('confirmCategory').textContent = category || 'destructive';
-      document.getElementById('confirmReason').textContent = reason || 'This command is destructive.';
+      document.getElementById('confirmReason').textContent = reason || (secret ? 'This path is secret.' : 'This command is destructive.');
       document.getElementById('confirmCommand').textContent = command || '';
       modal.hidden = false;
-      const yes = document.getElementById('confirmYes');
       const no = document.getElementById('confirmNo');
       const finish = (ok) => {
         modal.hidden = true;
+        title.textContent = 'Confirm destructive command';
+        yes.textContent = 'Run anyway';
+        yes.className = 'danger';
+        blurb.textContent = 'Jewbot will not run this unless you confirm. Cancel leaves it unrun.';
         yes.onclick = null;
         no.onclick = null;
         document.removeEventListener('keydown', onKey);
@@ -147,7 +160,7 @@ async function refresh() {
   const statusEl = document.getElementById('status');
   try {
     const s = await window.jewbot.status();
-    document.getElementById('milestone').textContent = s.milestone || 'M2';
+    document.getElementById('milestone').textContent = s.milestone || 'M3';
     const root = s.projectRoot || '';
     const rootEl = document.getElementById('projectRoot');
     rootEl.textContent = root;
@@ -164,6 +177,7 @@ async function refresh() {
       'Spend: ' + (s.spendGate || 'local-only'),
       '',
       'Terminal cwd is this project.',
+      'File edits show a diff and wait for Accept.',
       'Destructive commands wait for confirmation.',
     ];
     if (s.ollamaError) lines.push('', s.ollamaError);
@@ -182,8 +196,129 @@ function setMode(next) {
   document.getElementById('modeChat').classList.toggle('active', mode === 'chat');
   hintEl.textContent =
     mode === 'agent'
-      ? 'Agent streams tokens, then calls list_dir, read_file, and run_terminal. Destructive shell commands ask first.'
+      ? 'Agent can list, read, and edit files in this project. Edits show a diff and apply only after Accept. Destructive shell commands ask first.'
       : 'Chat streams tokens from Ollama with no tools. History stays in this window.';
+}
+
+function renderDiff(pre, unified) {
+  const lines = String(unified).split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const span = document.createElement('span');
+    if (line.startsWith('+') && !line.startsWith('+++')) span.className = 'diff-add';
+    else if (line.startsWith('-') && !line.startsWith('---')) span.className = 'diff-del';
+    else if (line.startsWith('@@')) span.className = 'diff-hunk';
+    span.textContent = line + (i === lines.length - 1 ? '' : '\n');
+    pre.appendChild(span);
+  }
+}
+
+function mountDiffCard(ev) {
+  const wrap = document.createElement('div');
+  wrap.className = 'tool diff-card';
+  wrap.dataset.editId = ev.editId || '';
+
+  const title = document.createElement('div');
+  title.className = 'tool-name';
+  title.textContent = (ev.tool || 'edit') + (ev.created ? ' · new file' : '');
+  const pathEl = document.createElement('div');
+  pathEl.className = 'diff-path';
+  pathEl.textContent = ev.path || '';
+  wrap.appendChild(title);
+  wrap.appendChild(pathEl);
+  if (ev.secret) {
+    const banner = document.createElement('div');
+    banner.className = 'secret-banner';
+    banner.textContent = 'Secret path. Accept writes it. Existing contents stay on this screen and are not sent back to the model.';
+    wrap.appendChild(banner);
+  }
+  const pre = document.createElement('pre');
+  pre.className = 'diff-body';
+  renderDiff(pre, ev.unifiedDiff || '');
+  wrap.appendChild(pre);
+
+  const actions = document.createElement('div');
+  actions.className = 'diff-actions';
+  const reject = document.createElement('button');
+  reject.type = 'button';
+  reject.className = 'secondary diff-reject';
+  reject.textContent = 'Reject';
+  const accept = document.createElement('button');
+  accept.type = 'button';
+  accept.className = 'diff-accept';
+  accept.textContent = 'Accept';
+  actions.appendChild(reject);
+  actions.appendChild(accept);
+  wrap.appendChild(actions);
+
+  const status = document.createElement('div');
+  status.className = 'diff-status';
+  status.dataset.diff = '1';
+  status.dataset.editId = ev.editId || '';
+  status.textContent = 'Waiting for Accept or Reject';
+  wrap.appendChild(status);
+
+  if (pendingTool && pendingTool.parentElement && pendingTool.dataset.diff !== '1') {
+    pendingTool.parentElement.replaceWith(wrap);
+  } else {
+    transcript.appendChild(wrap);
+  }
+
+  const choose = (accepted) => {
+    if (accept.disabled) return;
+    accept.disabled = true;
+    reject.disabled = true;
+    status.textContent = accepted ? 'Accepting…' : 'Rejecting…';
+    document.removeEventListener('keydown', onKey);
+    if (window.jewbot && ev.editId) window.jewbot.editReply({ editId: ev.editId, accepted: accepted === true });
+  };
+  const onKey = (e) => {
+    if (e.key === 'Escape' && !reject.disabled) {
+      e.preventDefault();
+      choose(false);
+    }
+  };
+  reject.onclick = () => choose(false);
+  accept.onclick = () => choose(true);
+  document.addEventListener('keydown', onKey);
+  wrap.cleanupDiffKey = () => document.removeEventListener('keydown', onKey);
+  reject.focus();
+  scrollDown();
+  return status;
+}
+
+function finishDiffCard(statusEl, observation) {
+  const obs = observation || '';
+  const applied = obs.startsWith('APPLIED');
+  const rejected = obs.startsWith('REJECTED');
+  statusEl.textContent = applied ? 'Applied' : rejected ? 'Rejected' : obs.startsWith('ERROR') || obs.startsWith('REFUSED') ? 'Not applied' : 'Done';
+  statusEl.className = 'diff-status ' + (applied ? 'ok' : 'bad');
+  const card = statusEl.closest('.diff-card');
+  if (!card) return;
+  if (typeof card.cleanupDiffKey === 'function') card.cleanupDiffKey();
+  card.querySelectorAll('.diff-accept, .diff-reject').forEach((button) => {
+    button.disabled = true;
+  });
+  if (!applied) return;
+  const actions = card.querySelector('.diff-actions');
+  if (!actions || card.querySelector('.diff-undo')) return;
+  const undo = document.createElement('button');
+  undo.type = 'button';
+  undo.className = 'secondary diff-undo';
+  undo.textContent = 'Undo';
+  const editId = statusEl.dataset.editId || card.dataset.editId || '';
+  undo.onclick = async () => {
+    undo.disabled = true;
+    try {
+      const res = await window.jewbot.editUndo(editId);
+      statusEl.textContent = res && res.ok ? 'Undone' : 'Undo failed: ' + ((res && res.reason) || 'unknown');
+      statusEl.className = 'diff-status ' + (res && res.ok ? 'ok' : 'bad');
+    } catch (err) {
+      statusEl.textContent = 'Undo failed: ' + err;
+      statusEl.className = 'diff-status bad';
+    }
+  };
+  actions.appendChild(undo);
 }
 
 function footerFromObservation(observation) {
@@ -202,6 +337,9 @@ function onStreamEvent(ev) {
   else if (ev.type === 'tool_call') {
     closeAssistant();
     pendingTool = addToolCard(ev.name || 'tool', ev.args || {});
+  } else if (ev.type === 'edit_preview') {
+    closeAssistant();
+    pendingTool = mountDiffCard(ev);
   } else if (ev.type === 'terminal_chunk' && pendingTool) {
     if (pendingTool.dataset.live !== '1') {
       pendingTool.textContent = (pendingTool.dataset.args || '') + '\n\n';
@@ -219,7 +357,11 @@ function onStreamEvent(ev) {
       if (confirmId && window.jewbot) window.jewbot.confirmReply({ confirmId, approved: ok === true });
     });
   } else if (ev.type === 'tool_result' && pendingTool) {
-    if (pendingTool.dataset.live === '1') {
+    if (pendingTool.dataset.diff === '1') {
+      finishDiffCard(pendingTool, ev.observation || '');
+      pendingTool = null;
+      scrollDown();
+    } else if (pendingTool.dataset.live === '1') {
       const foot = document.createElement('div');
       foot.className = 'term-foot';
       foot.textContent = footerFromObservation(ev.observation);
