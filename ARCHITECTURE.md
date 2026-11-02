@@ -115,8 +115,12 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 
 ### 8. Cascade runner (`src/modules/cascade`)
 
-- Ordered milestone queue: when status becomes `done`, enqueue/start next automatically.
-- On `blocked` / `needs_confirmation`, pause and surface to owner.
+- Ordered task queue in `<project>/.jewbot/cascade.json` (gitignored). Each task has an id, title, prompt, status (`pending`, `running`, `done`, `blocked`, `failed`), an optional acceptance command, and a receipt path.
+- The runner sends the prompt through the agent loop. On `done`, it runs the acceptance command in the terminal module. Exit 0 marks the task done and the next pending task starts immediately.
+- A human gate (destructive command, file-edit Accept, secret read, SSH host key or passphrase, `ask_owner`) is never self-approved. That task is marked `blocked` with a reason, a receipt is written, and the runner moves to the next pending task.
+- A failed acceptance check, a model error, max steps, or the wall-time budget marks the task `failed`, writes a receipt, and also moves on.
+- Stop aborts the current task (`blocked`: stopped by the owner) and does not start another. Pause lets the current task finish, then waits.
+- Each finished task gets a markdown receipt under `<project>/.jewbot/receipts/`.
 - Inspired by **ju-command-center** commander loop + receipt writeback (START / CHANGE / BLOCKED / VERIFIED_COMPLETE).
 
 ### 9. Safety rails (`src/modules/safety`)
@@ -139,7 +143,7 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 | **M3** | File edit + diff preview apply (**done**) |
 | **M4** | Context indexer (.gitignore-aware) (**done**) |
 | **M5** | SSH sessions + remote exec (**done**) |
-| **M6** | Cascade runner wired to milestones |
+| **M6** | Cascade runner wired to milestones (**done**) |
 | **M7** | Polish UI + packaging |
 
 ## Security notes

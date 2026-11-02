@@ -37,18 +37,23 @@ let sshSawChunk = false;
 let capturingSsh = false;
 let earlySshEvents = [];
 let sshUiChain = Promise.resolve();
+let cascadeRunState = 'idle';
 
 function rid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+function syncStopButton() {
+  stopBtn.disabled = !activeRequest && cascadeRunState === 'idle';
+}
+
 function setBusy(busy) {
   sendBtn.disabled = busy;
   goalEl.disabled = busy;
-  stopBtn.disabled = !busy;
   document.getElementById('modeAgent').disabled = busy;
   document.getElementById('modeChat').disabled = busy;
   document.getElementById('openProject').disabled = busy;
+  syncStopButton();
 }
 
 function scrollDown() {
@@ -174,7 +179,7 @@ async function refresh() {
   const statusEl = document.getElementById('status');
   try {
     const s = await window.jewbot.status();
-    document.getElementById('milestone').textContent = s.milestone || 'M5';
+    document.getElementById('milestone').textContent = s.milestone || 'M6';
     const root = s.projectRoot || '';
     const rootEl = document.getElementById('projectRoot');
     rootEl.textContent = root;
@@ -201,6 +206,7 @@ async function refresh() {
       lines.push('', 'Start Ollama, then pull a model:', '  ollama serve', '  ollama pull ' + (model || 'qwen2.5-coder:7b'));
     }
     statusEl.textContent = lines.join('\n');
+    if (window.jewbot.cascadeList) renderCascade(await window.jewbot.cascadeList());
     await refreshSsh();
   } catch (e) {
     statusEl.textContent = String(e);
@@ -843,6 +849,7 @@ document.getElementById('refresh').onclick = refresh;
 document.getElementById('send').onclick = send;
 document.getElementById('stop').onclick = () => {
   if (activeRequest && window.jewbot) window.jewbot.cancelStream(activeRequest);
+  if (window.jewbot && window.jewbot.cascadeStop) void window.jewbot.cascadeStop();
 };
 document.getElementById('modeAgent').onclick = () => setMode('agent');
 document.getElementById('modeChat').onclick = () => setMode('chat');
@@ -891,10 +898,104 @@ termCommand.addEventListener('keydown', (e) => {
   }
 });
 
+function renderCascade(snap) {
+  const stateEl = document.getElementById('cascadeState');
+  const list = document.getElementById('cascadeList');
+  if (!stateEl || !list) return;
+  const tasks = (snap && snap.tasks) || [];
+  cascadeRunState = (snap && snap.runState) || 'idle';
+  stateEl.textContent = snap && snap.error ? snap.error : cascadeRunState;
+  list.textContent = '';
+  if (!tasks.length) {
+    const empty = document.createElement('li');
+    empty.className = 'muted';
+    empty.textContent = 'No tasks yet.';
+    list.appendChild(empty);
+  }
+  tasks.forEach((task) => {
+    const li = document.createElement('li');
+    li.className = 'cascade-item';
+    li.dataset.task = task.title || '';
+    li.dataset.status = task.status || '';
+    li.dataset.reason = task.reason || '';
+    const head = document.createElement('div');
+    const status = document.createElement('span');
+    status.className = 'st-' + (task.status || 'pending');
+    status.textContent = task.status || 'pending';
+    head.appendChild(document.createTextNode((task.title || 'Untitled') + ' — '));
+    head.appendChild(status);
+    li.appendChild(head);
+    if (task.reason) {
+      const reason = document.createElement('div');
+      reason.className = 'reason';
+      reason.textContent = task.reason;
+      li.appendChild(reason);
+    }
+    if (task.status === 'blocked' || task.status === 'failed') {
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'secondary';
+      retry.textContent = 'Requeue';
+      retry.onclick = () => {
+        if (window.jewbot) void window.jewbot.cascadeRequeue(task.id);
+      };
+      li.appendChild(retry);
+    }
+    if (task.status !== 'running') {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'secondary';
+      remove.textContent = 'Remove';
+      remove.style.marginLeft = '6px';
+      remove.onclick = () => {
+        if (window.jewbot) void window.jewbot.cascadeRemove(task.id);
+      };
+      li.appendChild(remove);
+    }
+    list.appendChild(li);
+  });
+  syncStopButton();
+}
+
+async function addCascadeTask() {
+  const title = document.getElementById('cascadeTitle').value.trim();
+  const prompt = document.getElementById('cascadePrompt').value.trim();
+  const acceptance = document.getElementById('cascadeAccept').value.trim();
+  if (!title || !prompt) {
+    document.getElementById('cascadeState').textContent = 'Title and prompt are required';
+    return;
+  }
+  try {
+    const res = await window.jewbot.cascadeAdd({ title, prompt, acceptance: acceptance || undefined });
+    if (!res || !res.ok) {
+      document.getElementById('cascadeState').textContent = (res && res.reason) || 'Could not add task';
+      return;
+    }
+    document.getElementById('cascadeTitle').value = '';
+    document.getElementById('cascadePrompt').value = '';
+    document.getElementById('cascadeAccept').value = '';
+  } catch (err) {
+    document.getElementById('cascadeState').textContent = String(err);
+  }
+}
+
 if (window.jewbot && window.jewbot.onStreamEvent) {
   window.jewbot.onStreamEvent(onStreamEvent);
   if (window.jewbot.onTerminalEvent) window.jewbot.onTerminalEvent(onTerminalEvent);
   if (window.jewbot.onSshEvent) window.jewbot.onSshEvent(onSshEvent);
+  if (window.jewbot.onCascadeEvent) window.jewbot.onCascadeEvent(renderCascade);
+  document.getElementById('cascadeStart').onclick = () => {
+    void window.jewbot.cascadeStart();
+  };
+  document.getElementById('cascadePause').onclick = () => {
+    void window.jewbot.cascadePause();
+  };
+  document.getElementById('cascadeStop').onclick = () => {
+    void window.jewbot.cascadeStop();
+  };
+  document.getElementById('cascadeAdd').onclick = () => {
+    void addCascadeTask();
+  };
   refresh();
 } else {
   document.getElementById('status').textContent = 'Open this UI from the Electron app (npm start).';

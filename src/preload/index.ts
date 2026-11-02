@@ -63,6 +63,25 @@ export interface SshStartResult {
   executionId?: string;
 }
 
+export interface CascadeTaskView {
+  id: string;
+  title: string;
+  prompt: string;
+  status: string;
+  acceptance?: string;
+  reason?: string;
+  receipt?: string;
+}
+
+export interface CascadeSnapshot {
+  runState: 'idle' | 'running' | 'paused';
+  tasks: CascadeTaskView[];
+  error: string | null;
+  maxSteps: number;
+  maxWallMs: number;
+  allowPaidApis: boolean;
+}
+
 export interface TerminalPanelEvent {
   type: 'chunk' | 'exit';
   sessionId: string;
@@ -130,6 +149,19 @@ contextBridge.exposeInMainWorld('jewbot', {
     const listener = (_event: IpcRendererEvent, data: SshPanelEvent) => cb(data);
     ipcRenderer.on('jewbot:sshEvent', listener);
     return () => ipcRenderer.removeListener('jewbot:sshEvent', listener);
+  },
+  cascadeList: () => ipcRenderer.invoke('jewbot:cascadeList') as Promise<CascadeSnapshot>,
+  cascadeAdd: (payload: { title: string; prompt: string; acceptance?: string }) =>
+    ipcRenderer.invoke('jewbot:cascadeAdd', payload) as Promise<{ ok: boolean; reason?: string; task?: CascadeTaskView }>,
+  cascadeStart: () => ipcRenderer.invoke('jewbot:cascadeStart') as Promise<CascadeSnapshot & { ok?: boolean; reason?: string }>,
+  cascadePause: () => ipcRenderer.invoke('jewbot:cascadePause') as Promise<CascadeSnapshot>,
+  cascadeStop: () => ipcRenderer.invoke('jewbot:cascadeStop') as Promise<CascadeSnapshot>,
+  cascadeRequeue: (id: string) => ipcRenderer.invoke('jewbot:cascadeRequeue', id) as Promise<{ ok: boolean; reason?: string }>,
+  cascadeRemove: (id: string) => ipcRenderer.invoke('jewbot:cascadeRemove', id) as Promise<{ ok: boolean; reason?: string }>,
+  onCascadeEvent: (cb: (snap: CascadeSnapshot) => void) => {
+    const listener = (_event: IpcRendererEvent, data: CascadeSnapshot) => cb(data);
+    ipcRenderer.on('jewbot:cascadeEvent', listener);
+    return () => ipcRenderer.removeListener('jewbot:cascadeEvent', listener);
   },
 });
 

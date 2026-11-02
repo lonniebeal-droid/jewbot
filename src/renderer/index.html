@@ -50,6 +50,15 @@
     .term-block { display: flex; flex-direction: column; min-height: 160px; flex: 1; gap: 8px; }
     select { background: #0f1115; color: #e8eaed; border: 1px solid #2a2f3a; border-radius: 6px; padding: 8px; font: inherit; max-width: 100%; }
     .ssh-hosts, .ssh-sessions { margin: 0; white-space: pre-wrap; max-height: 72px; overflow: auto; }
+    .cascade-list { list-style: none; margin: 0 0 8px; padding: 0; max-height: 168px; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+    .cascade-item { border: 1px solid #2a2f3a; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+    .cascade-item .reason { color: #d29922; margin-top: 4px; white-space: pre-wrap; }
+    .cascade-item .st-done { color: #3fb950; }
+    .cascade-item .st-blocked, .cascade-item .st-failed { color: #f85149; }
+    .cascade-item .st-running { color: #79b8ff; }
+    .cascade-item .st-pending { color: #8b949e; }
+    #cascadePrompt { min-height: 44px; margin-bottom: 6px; }
+    #cascadeTitle, #cascadeAccept { margin-bottom: 6px; }
     .dialog.neutral { border-color: #30363d; }
     .dialog.mismatch { border-color: #d29922; }
     .term-out { flex: 1; overflow: auto; background: #0b0d12; border-radius: 6px; padding: 8px; min-height: 140px; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
@@ -74,7 +83,7 @@
 <body>
   <header>
     <h1>JEWBOT</h1>
-    <span class="badge" id="milestone">M5</span>
+    <span class="badge" id="milestone">M6</span>
     <span class="muted" id="spend">$0 · Ollama</span>
     <span class="root" id="projectRoot" title="">…</span>
     <button class="secondary" id="openProject" type="button">Open project</button>
@@ -102,6 +111,23 @@
           <button class="secondary" id="refresh" type="button">Refresh</button>
         </div>
         <pre id="status">Loading…</pre>
+      </div>
+      <div class="term-block" id="cascadePanel">
+        <div class="row">
+          <h3 style="margin:0">Cascade</h3>
+          <span class="muted" id="cascadeState">idle</span>
+        </div>
+        <ul id="cascadeList" class="cascade-list"></ul>
+        <div class="row">
+          <button id="cascadeStart" type="button">Start</button>
+          <button class="secondary" id="cascadePause" type="button">Pause</button>
+          <button class="secondary" id="cascadeStop" type="button">Stop</button>
+        </div>
+        <input id="cascadeTitle" type="text" placeholder="Task title" maxlength="160" />
+        <textarea id="cascadePrompt" rows="2" placeholder="What the agent should do"></textarea>
+        <input id="cascadeAccept" type="text" placeholder="Acceptance command (optional)" spellcheck="false" />
+        <button id="cascadeAdd" type="button">Add task</button>
+        <p class="muted" id="cascadeHint">Runs pending tasks one after another on the local model. A task that needs confirmation is marked blocked and the next pending task starts. Jewbot does not approve those steps itself.</p>
       </div>
       <div class="term-block">
         <div class="row">
