@@ -10,6 +10,14 @@ const termCommand = document.getElementById('termCommand');
 const termRun = document.getElementById('termRun');
 const termKill = document.getElementById('termKill');
 const termState = document.getElementById('termState');
+const sshOut = document.getElementById('sshOut');
+const sshCommand = document.getElementById('sshCommand');
+const sshRun = document.getElementById('sshRun');
+const sshKill = document.getElementById('sshKill');
+const sshConnectBtn = document.getElementById('sshConnect');
+const sshDisconnectBtn = document.getElementById('sshDisconnect');
+const sshState = document.getElementById('sshState');
+const sshHostSelect = document.getElementById('sshHost');
 
 let mode = 'agent';
 let chatHistory = [];
@@ -23,6 +31,12 @@ let termSawChunk = false;
 let confirmChain = Promise.resolve();
 let capturingTerm = false;
 let earlyTermEvents = [];
+let activeSshSession = null;
+let activeSshExec = null;
+let sshSawChunk = false;
+let capturingSsh = false;
+let earlySshEvents = [];
+let sshUiChain = Promise.resolve();
 
 function rid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -59,7 +73,7 @@ function addMessage(role, text) {
 
 function addToolCard(name, args) {
   const wrap = document.createElement('div');
-  wrap.className = 'tool' + (name === 'run_terminal' ? ' tool-terminal' : '');
+  wrap.className = 'tool' + (name === 'run_terminal' || name === 'ssh_exec' ? ' tool-terminal' : '');
   const title = document.createElement('div');
   title.className = 'tool-name';
   title.textContent = name;
@@ -160,7 +174,7 @@ async function refresh() {
   const statusEl = document.getElementById('status');
   try {
     const s = await window.jewbot.status();
-    document.getElementById('milestone').textContent = s.milestone || 'M4';
+    document.getElementById('milestone').textContent = s.milestone || 'M5';
     const root = s.projectRoot || '';
     const rootEl = document.getElementById('projectRoot');
     rootEl.textContent = root;
@@ -180,14 +194,54 @@ async function refresh() {
       'Context index skips secrets, binaries, and gitignored paths.',
       'File edits show a diff and wait for Accept.',
       'Destructive commands wait for confirmation.',
+      'SSH hosts: ' + (s.hosts && s.hosts.length ? s.hosts.map((host) => host.name).join(', ') : '(none configured)'),
     ];
     if (s.ollamaError) lines.push('', s.ollamaError);
     if (!s.ollamaOk) {
       lines.push('', 'Start Ollama, then pull a model:', '  ollama serve', '  ollama pull ' + (model || 'qwen2.5-coder:7b'));
     }
     statusEl.textContent = lines.join('\n');
+    await refreshSsh();
   } catch (e) {
     statusEl.textContent = String(e);
+  }
+}
+
+async function refreshSsh() {
+  if (!window.jewbot || !window.jewbot.sshList) return;
+  const hostsEl = document.getElementById('sshHosts');
+  const sessionsEl = document.getElementById('sshSessions');
+  try {
+    const info = await window.jewbot.sshList();
+    const hosts = (info && info.hosts) || [];
+    const previous = sshHostSelect.value;
+    sshHostSelect.textContent = '';
+    if (!hosts.length) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '(no hosts configured)';
+      sshHostSelect.appendChild(opt);
+      hostsEl.textContent = info && info.error
+        ? info.error
+        : 'No hosts configured. Add ~/.jewbot/hosts.json (see README).';
+    } else {
+      hosts.forEach((host) => {
+        const opt = document.createElement('option');
+        opt.value = host.name;
+        opt.textContent = host.name + ' · ' + host.username + '@' + host.host;
+        sshHostSelect.appendChild(opt);
+      });
+      if (previous) sshHostSelect.value = previous;
+      hostsEl.textContent = hosts
+        .map((host) => host.name + ' · ' + host.username + '@' + host.host + ':' + host.port + ' · ' + host.auth)
+        .join('\n');
+    }
+    const sessions = (info && info.sessions) || [];
+    sessionsEl.textContent = sessions.length
+      ? sessions.map((session) => session.name + ' · ' + session.fingerprint).join('\n')
+      : '(no sessions)';
+  } catch (err) {
+    hostsEl.textContent = String(err);
   }
 }
 
@@ -197,7 +251,7 @@ function setMode(next) {
   document.getElementById('modeChat').classList.toggle('active', mode === 'chat');
   hintEl.textContent =
     mode === 'agent'
-      ? 'Agent can list, search, read, and edit files in this project. A compact tree is included; the whole repo is not. Edits show a diff and apply only after Accept. Destructive shell commands ask first.'
+      ? 'Agent can list, search, read, and edit files in this project, and run commands on allowlisted SSH hosts. A compact tree is included; the whole repo is not. Edits show a diff and apply only after Accept. Destructive commands ask first.'
       : 'Chat streams tokens from Ollama with no tools. A compact project snapshot is included; the whole repo is not.';
 }
 
@@ -341,7 +395,7 @@ function onStreamEvent(ev) {
   } else if (ev.type === 'edit_preview') {
     closeAssistant();
     pendingTool = mountDiffCard(ev);
-  } else if (ev.type === 'terminal_chunk' && pendingTool) {
+  } else if ((ev.type === 'terminal_chunk' || ev.type === 'ssh_chunk') && pendingTool) {
     if (pendingTool.dataset.live !== '1') {
       pendingTool.textContent = (pendingTool.dataset.args || '') + '\n\n';
       pendingTool.dataset.live = '1';
@@ -490,6 +544,279 @@ async function startTerminal(command, executionId) {
   }
 }
 
+function setSshState(text) {
+  sshState.textContent = text;
+}
+
+function appendSsh(text, kind) {
+  if (sshOut.dataset.empty === '1') {
+    sshOut.textContent = '';
+    sshOut.dataset.empty = '0';
+  }
+  const span = document.createElement('span');
+  span.className = kind || 'stdout';
+  span.textContent = text;
+  sshOut.appendChild(span);
+  sshOut.scrollTop = sshOut.scrollHeight;
+}
+
+function enqueueSshUi(run) {
+  const next = sshUiChain.then(run, run);
+  sshUiChain = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
+function askSshSecret(ev) {
+  return enqueueSshUi(
+    () =>
+      new Promise((resolve) => {
+        const modal = document.getElementById('sshSecretModal');
+        const input = document.getElementById('sshSecretInput');
+        const title = document.getElementById('sshSecretTitle');
+        const blurb = document.getElementById('sshSecretBlurb');
+        const passphrase = ev.kind !== 'password';
+        title.textContent = passphrase ? 'SSH passphrase' : 'SSH password';
+        blurb.textContent =
+          (ev.username || 'user') +
+          '@' +
+          (ev.host || ev.name || 'host') +
+          ' — held in memory for this session only. It is not saved and is not sent to the model.';
+        input.value = '';
+        modal.hidden = false;
+        const finish = (secret) => {
+          input.value = '';
+          modal.hidden = true;
+          ok.onclick = null;
+          cancel.onclick = null;
+          input.onkeydown = null;
+          document.removeEventListener('keydown', onKey);
+          resolve(secret);
+        };
+        const ok = document.getElementById('sshSecretOk');
+        const cancel = document.getElementById('sshSecretCancel');
+        const onKey = (e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            finish(null);
+          }
+        };
+        ok.onclick = () => finish(input.value || null);
+        cancel.onclick = () => finish(null);
+        input.onkeydown = (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            finish(input.value || null);
+          }
+        };
+        document.addEventListener('keydown', onKey);
+        input.focus();
+      }),
+  );
+}
+
+function askSshHostKey(ev) {
+  return enqueueSshUi(
+    () =>
+      new Promise((resolve) => {
+        const modal = document.getElementById('sshHostModal');
+        const dialog = document.getElementById('sshHostDialog');
+        const title = document.getElementById('sshHostTitle');
+        const reason = document.getElementById('sshHostReason');
+        const yes = document.getElementById('sshHostYes');
+        const no = document.getElementById('sshHostNo');
+        const mismatch = ev.mismatch === true;
+        title.textContent = mismatch ? 'Host key changed' : 'Confirm host key';
+        reason.textContent = mismatch
+          ? 'The fingerprint does not match the key stored for this host. Reject unless you expected the machine to change.'
+          : 'First connection. Confirm this fingerprint matches the machine before trusting it.';
+        yes.textContent = mismatch ? 'Trust the new key' : 'Trust this key';
+        dialog.classList.toggle('mismatch', mismatch);
+        document.getElementById('sshHostWhere').textContent =
+          (ev.name || '') + ' · ' + (ev.host || '') + ':' + (ev.port || '') + ' · ' + (ev.algorithm || '');
+        document.getElementById('sshHostFingerprint').textContent = ev.fingerprint || '';
+        modal.hidden = false;
+        const finish = (ok) => {
+          modal.hidden = true;
+          dialog.classList.remove('mismatch');
+          yes.onclick = null;
+          no.onclick = null;
+          document.removeEventListener('keydown', onKey);
+          resolve(ok === true);
+        };
+        const onKey = (e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            finish(false);
+          }
+        };
+        yes.onclick = () => finish(true);
+        no.onclick = () => finish(false);
+        document.addEventListener('keydown', onKey);
+        no.focus();
+      }),
+  );
+}
+
+function applySshExecEvent(ev) {
+  if (!ev) return;
+  if (ev.type === 'chunk') {
+    if (activeSshExec && ev.execId && ev.execId !== activeSshExec) return;
+    sshSawChunk = true;
+    appendSsh(ev.text || '', ev.stream === 'stderr' ? 'stderr' : 'stdout');
+    return;
+  }
+  if (ev.type === 'exit') {
+    if (activeSshExec && ev.execId && ev.execId !== activeSshExec) return;
+    const code = ev.exitCode === null || ev.exitCode === undefined ? 'null' : String(ev.exitCode);
+    const bits = ['exit ' + code];
+    if (ev.killed) bits.push('killed');
+    if (ev.timedOut) bits.push('timed out');
+    if (ev.truncated) bits.push('truncated');
+    if (ev.status) bits.push(ev.status);
+    appendSsh('\n[' + bits.join(', ') + ']\n', 'term-meta');
+    if (!sshSawChunk && ev.stdout) appendSsh(ev.stdout, 'stdout');
+    if (!sshSawChunk && ev.stderr) appendSsh(ev.stderr, 'stderr');
+    activeSshExec = null;
+    sshSawChunk = false;
+    if (activeSshSession) setSshState('connected');
+    sshRun.disabled = !activeSshSession;
+    sshKill.disabled = true;
+    sshCommand.disabled = false;
+  }
+}
+
+function onSshEvent(ev) {
+  if (!ev || !ev.type) return;
+  if (ev.type === 'secret_required') {
+    askSshSecret(ev).then((secret) => {
+      if (ev.promptId && window.jewbot) window.jewbot.sshSecretReply({ promptId: ev.promptId, secret: secret });
+    });
+    return;
+  }
+  if (ev.type === 'hostkey_required') {
+    askSshHostKey(ev).then((ok) => {
+      if (ev.confirmId && window.jewbot) window.jewbot.sshHostKeyReply({ confirmId: ev.confirmId, approved: ok === true });
+    });
+    return;
+  }
+  if (ev.type === 'connected') {
+    activeSshSession = ev.sessionId;
+    setSshState('connected');
+    sshRun.disabled = false;
+    sshDisconnectBtn.disabled = false;
+    appendSsh('connected ' + (ev.name || '') + ' ' + (ev.fingerprint || '') + '\n', 'term-meta');
+    void refreshSsh();
+    return;
+  }
+  if (ev.type === 'disconnected') {
+    if (!activeSshSession || ev.sessionId === activeSshSession) {
+      activeSshSession = null;
+      activeSshExec = null;
+      setSshState('idle');
+      sshRun.disabled = true;
+      sshKill.disabled = true;
+      sshDisconnectBtn.disabled = true;
+      sshCommand.disabled = false;
+    }
+    appendSsh('disconnected ' + (ev.name || '') + '\n', 'term-meta');
+    void refreshSsh();
+    return;
+  }
+  if (ev.type === 'chunk' || ev.type === 'exit') {
+    if (capturingSsh) {
+      earlySshEvents.push(ev);
+      return;
+    }
+    applySshExecEvent(ev);
+  }
+}
+
+async function connectSsh() {
+  const name = sshHostSelect.value;
+  if (!name || !window.jewbot || !window.jewbot.sshConnect) return;
+  setSshState('connecting');
+  sshConnectBtn.disabled = true;
+  try {
+    const res = await window.jewbot.sshConnect(name);
+    if (!res || !res.ok) {
+      appendSsh('\n[not connected] ' + ((res && res.reason) || 'failed') + '\n', 'stderr');
+      if (!activeSshSession) setSshState('idle');
+    }
+  } catch (err) {
+    appendSsh('\n[not connected] ' + err + '\n', 'stderr');
+    if (!activeSshSession) setSshState('idle');
+  } finally {
+    sshConnectBtn.disabled = false;
+  }
+}
+
+async function runSsh() {
+  const command = sshCommand.value.trim();
+  if (!command || !activeSshSession || !window.jewbot) return;
+  if (activeSshExec) {
+    appendSsh('\n[not run] a command is still running — Kill it first\n', 'term-meta');
+    return;
+  }
+  sshRun.disabled = true;
+  sshCommand.disabled = true;
+  let res = await startSsh(command);
+  if (res && !res.ok && res.needsConfirmation) {
+    const yes = await askConfirm(command, res.reason, res.category);
+    if (!yes) {
+      appendSsh('\n[not run] confirmation cancelled\n', 'term-meta');
+      sshRun.disabled = false;
+      sshCommand.disabled = false;
+      setSshState(activeSshSession ? 'connected' : 'idle');
+      return;
+    }
+    const grant = await window.jewbot.sshConfirm(command);
+    if (!grant || !grant.executionId) {
+      appendSsh('\n[not run] confirmation was not granted\n', 'term-meta');
+      sshRun.disabled = false;
+      sshCommand.disabled = false;
+      return;
+    }
+    res = await startSsh(command, grant.executionId);
+  }
+  if (!res || !res.started) {
+    appendSsh('\n[not run] ' + ((res && res.reason) || 'blocked') + '\n', 'term-meta');
+    sshRun.disabled = false;
+    sshCommand.disabled = false;
+    if (activeSshSession) setSshState('connected');
+  }
+}
+
+async function startSsh(command, executionId) {
+  earlySshEvents = [];
+  capturingSsh = true;
+  try {
+    const payload = executionId
+      ? { target: activeSshSession, command, executionId }
+      : { target: activeSshSession, command };
+    const res = await window.jewbot.sshExec(payload);
+    if (!res || !res.ok || !res.execId) {
+      capturingSsh = false;
+      earlySshEvents = [];
+      return res;
+    }
+    activeSshExec = res.execId;
+    sshSawChunk = false;
+    appendSsh('$ ' + command + '\n', 'term-meta');
+    setSshState('running');
+    sshKill.disabled = false;
+    while (earlySshEvents.length) applySshExecEvent(earlySshEvents.shift());
+    capturingSsh = false;
+    return res;
+  } catch (err) {
+    capturingSsh = false;
+    earlySshEvents = [];
+    throw err;
+  }
+}
+
 function send() {
   const text = goalEl.value.trim();
   if (!text || activeRequest) return;
@@ -533,6 +860,24 @@ document.getElementById('termRun').onclick = () => {
 document.getElementById('termKill').onclick = () => {
   if (activeTermSession && window.jewbot) void window.jewbot.terminalKill(activeTermSession);
 };
+sshConnectBtn.onclick = () => {
+  void connectSsh();
+};
+sshDisconnectBtn.onclick = () => {
+  if (activeSshSession && window.jewbot) void window.jewbot.sshDisconnect(activeSshSession);
+};
+sshRun.onclick = () => {
+  void runSsh();
+};
+sshKill.onclick = () => {
+  if (activeSshExec && window.jewbot) void window.jewbot.sshKill(activeSshExec);
+};
+sshCommand.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    void runSsh();
+  }
+});
 goalEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -549,6 +894,7 @@ termCommand.addEventListener('keydown', (e) => {
 if (window.jewbot && window.jewbot.onStreamEvent) {
   window.jewbot.onStreamEvent(onStreamEvent);
   if (window.jewbot.onTerminalEvent) window.jewbot.onTerminalEvent(onTerminalEvent);
+  if (window.jewbot.onSshEvent) window.jewbot.onSshEvent(onSshEvent);
   refresh();
 } else {
   document.getElementById('status').textContent = 'Open this UI from the Electron app (npm start).';

@@ -5,7 +5,16 @@ import * as os from 'os';
 import * as path from 'path';
 import { chatStream, ChatMessage, defaultOllamaConfig, probeOllama } from '../modules/llm';
 import { defaultTerminal, TerminalStartResult } from '../modules/terminal';
-import { defaultSshManager } from '../modules/ssh';
+import {
+  createScriptedClientFactory,
+  defaultSshManager,
+  HostKeyPrompt,
+  SecretPrompt,
+  SshExecChunk,
+  SshExecResult,
+  SshSessionInfo,
+  SshStartResult,
+} from '../modules/ssh';
 import { FileWorkspace } from '../modules/files';
 import { ContextIndexer } from '../modules/context';
 import { AgentLoop, AgentStreamEvent, DestructiveConfirmRequest, EditConfirmRequest } from '../modules/agent';
@@ -21,7 +30,12 @@ const cascade = new CascadeRunner();
 const inflight = new Map<string, AbortController>();
 const pendingConfirms = new Map<string, (approved: boolean) => void>();
 const pendingEdits = new Map<string, (accepted: boolean) => void>();
+const pendingHostKeys = new Map<string, (approved: boolean) => void>();
+const pendingSecrets = new Map<string, (secret: string | null) => void>();
 const undoTargets = new Map<string, FileWorkspace>();
+let uiSshExecs: string[] = [];
+let uiSshPassOk = false;
+let uiSshKnownPath = '';
 
 const CHAT_SYSTEM =
   'You are Jewbot, a local coding assistant running on Ollama. $0 spend — no paid APIs. Be concise and accurate. The project snapshot below is a compact tree plus a few excerpts, not the whole repo. Secret files are omitted.';
@@ -98,10 +112,10 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
     }
     const report = (await win.webContents.executeJavaScript(`
       (async () => {
-        const ids = ['milestone','goal','send','stop','transcript','status','openProject','modeAgent','modeChat','projectRoot','termCommand','termRun','termKill','termOut','confirmModal','confirmYes','confirmNo','confirmCommand','confirmBlurb'];
+        const ids = ['milestone','goal','send','stop','transcript','status','openProject','modeAgent','modeChat','projectRoot','termCommand','termRun','termKill','termOut','confirmModal','confirmYes','confirmNo','confirmCommand','confirmBlurb','sshHost','sshConnect','sshDisconnect','sshHosts','sshSessions','sshOut','sshCommand','sshRun','sshKill','sshState','sshHostModal','sshHostYes','sshHostNo','sshHostFingerprint','sshSecretModal','sshSecretInput','sshSecretOk'];
         const missing = ids.filter((id) => !document.getElementById(id));
         const bridge = window.jewbot || {};
-        const hasBridge = ['status','startAgent','startChat','cancelStream','onStreamEvent','pickProjectRoot','terminalStart','terminalConfirm','terminalKill','confirmReply','onTerminalEvent','editReply','editUndo'].every((k) => typeof bridge[k] === 'function');
+        const hasBridge = ['status','startAgent','startChat','cancelStream','onStreamEvent','pickProjectRoot','terminalStart','terminalConfirm','terminalKill','confirmReply','onTerminalEvent','editReply','editUndo','sshList','sshConnect','sshDisconnect','sshExec','sshConfirm','sshKill','sshHostKeyReply','sshSecretReply','onSshEvent'].every((k) => typeof bridge[k] === 'function');
         let status = null;
         let statusError = null;
         try { status = await window.jewbot.status(); }
@@ -176,6 +190,29 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
         const dialogClosed = document.getElementById('confirmModal').hidden === true;
         const termAfterCancel = document.getElementById('termOut').innerText;
         const blocked = await window.jewbot.terminalStart({ command: 'rm -rf /tmp/jewbot-ui-m2-nope' });
+        document.getElementById('refresh').click();
+        const sshHasPi = await waitFor(() => document.getElementById('sshHosts').innerText.indexOf('pi') >= 0, 4000);
+        document.getElementById('sshHost').value = 'pi';
+        document.getElementById('sshConnect').click();
+        const sshSecretShown = await waitFor(() => document.getElementById('sshSecretModal').hidden === false, 4000);
+        document.getElementById('sshSecretInput').value = 'ui-pass-phrase-99';
+        document.getElementById('sshSecretOk').click();
+        const sshHostShown = await waitFor(() => document.getElementById('sshHostModal').hidden === false, 4000);
+        const sshFingerprint = document.getElementById('sshHostFingerprint').textContent || '';
+        document.getElementById('sshHostYes').click();
+        const sshConnected = await waitFor(() => document.getElementById('sshState').textContent === 'connected', 4000);
+        document.getElementById('sshCommand').value = 'echo jewbot-ssh-ui';
+        document.getElementById('sshRun').click();
+        const sshEcho = await waitFor(() => document.getElementById('sshOut').innerText.indexOf('jewbot-ssh-ui') >= 0, 4000);
+        const sshEchoDone = await waitFor(() => document.getElementById('sshState').textContent === 'connected', 4000);
+        document.getElementById('sshCommand').value = 'rm -rf /tmp/jewbot-ssh-ui-nope';
+        document.getElementById('sshRun').click();
+        const sshDialog = await waitFor(() => document.getElementById('confirmModal').hidden === false, 4000);
+        const sshDialogCommand = document.getElementById('confirmCommand').textContent || '';
+        document.getElementById('confirmNo').click();
+        const sshCancel = await waitFor(() => document.getElementById('sshOut').innerText.indexOf('not run') >= 0, 2000);
+        const sshSecretCleared = document.getElementById('sshSecretInput').value === ''
+          && document.getElementById('sshOut').innerText.indexOf('ui-pass-phrase-99') < 0;
         return {
           missing,
           hasBridge,
@@ -201,6 +238,17 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
           editAcceptShown: !!(editAccept && editAccept.shown && editAccept.diffText.indexOf('hello from m3') >= 0),
           editAcceptMarked: !!(editAccept && editAccept.marked),
           editAcceptUndone: !!(editAccept && editAccept.undone),
+          sshHasPi,
+          sshSecretShown,
+          sshHostShown,
+          sshFingerprint,
+          sshConnected,
+          sshEcho,
+          sshEchoDone,
+          sshDialog,
+          sshDialogCommand,
+          sshCancel,
+          sshSecretCleared,
         };
       })()
     `)) as {
@@ -228,11 +276,31 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
       editAcceptShown: boolean;
       editAcceptMarked: boolean;
       editAcceptUndone: boolean;
+      sshHasPi: boolean;
+      sshSecretShown: boolean;
+      sshHostShown: boolean;
+      sshFingerprint: string;
+      sshConnected: boolean;
+      sshEcho: boolean;
+      sshEchoDone: boolean;
+      sshDialog: boolean;
+      sshDialogCommand: string;
+      sshCancel: boolean;
+      sshSecretCleared: boolean;
     };
+    let knownBody = '';
+    try {
+      knownBody = fs.readFileSync(uiSshKnownPath, 'utf8');
+    } catch {
+      knownBody = '';
+    }
+    const sshKnownSafe = knownBody.includes('SHA256:') && !knownBody.includes('ui-pass-phrase-99');
+    const sshEchoRan = uiSshExecs.some((command) => command.includes('jewbot-ssh-ui'));
+    const sshRmBlocked = !uiSshExecs.some((command) => command.includes('rm'));
     const ok =
       report.hasBridge &&
       report.missing.length === 0 &&
-      report.milestone === 'M4' &&
+      report.milestone === 'M5' &&
       !!report.projectRoot &&
       report.sendEnabled &&
       report.streamed &&
@@ -250,6 +318,21 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
       report.editAcceptShown &&
       report.editAcceptMarked &&
       report.editAcceptUndone &&
+      report.sshHasPi &&
+      report.sshSecretShown &&
+      report.sshHostShown &&
+      report.sshFingerprint.startsWith('SHA256:') &&
+      report.sshConnected &&
+      report.sshEcho &&
+      report.sshEchoDone &&
+      report.sshDialog &&
+      report.sshDialogCommand.includes('rm -rf') &&
+      report.sshCancel &&
+      report.sshSecretCleared &&
+      uiSshPassOk &&
+      sshKnownSafe &&
+      sshEchoRan &&
+      sshRmBlocked &&
       editSmokeFilesOk() &&
       (report.ollamaOk || report.transcript.includes('Cannot reach Ollama'));
     console.log(`UI_SMOKE ${JSON.stringify(report)}`);
@@ -278,6 +361,8 @@ function finish(requestId: string): void {
 }
 
 app.whenReady().then(() => {
+  if (process.env.JEWBOT_UI_SMOKE === '1') prepareUiSmokeSsh();
+  bindSshEvents();
   createWindow();
   cascade.enqueue({
     ...M0_MILESTONE,
@@ -291,7 +376,7 @@ app.whenReady().then(() => {
     const probe = await probeOllama(cfg);
     return {
       version: app.getVersion(),
-      milestone: 'M4',
+      milestone: 'M5',
       projectRoot,
       allowPaidApis: safety.allowPaidApis,
       spendGate: spend.ok ? 'local-only' : 'paid-blocked',
@@ -371,6 +456,8 @@ app.whenReady().then(() => {
       context,
       confirmDestructive: (confirmReq) =>
         requestOwnerConfirm(event.sender, req.requestId, confirmReq, ctrl.signal),
+      confirmHostKey: (hostReq) => requestHostKey(event.sender, hostReq, ctrl.signal),
+      promptSshSecret: (secretReq) => requestSecret(event.sender, secretReq, ctrl.signal),
       confirmEdit: (editReq) => requestEditDecision(event.sender, req.requestId, editReq, ctrl.signal),
       confirmSecret: (secretReq) =>
         requestOwnerConfirm(
@@ -576,6 +663,101 @@ app.whenReady().then(() => {
 
   ipcMain.handle('jewbot:contextSummary', async () => context.summarize());
 
+  ipcMain.handle('jewbot:sshList', async () => defaultSshManager.inventory());
+
+  ipcMain.handle('jewbot:sshConnect', async (event, name: unknown) => {
+    if (typeof name !== 'string' || !name.trim() || name.length > 64) return { ok: false, reason: 'Invalid host' };
+    try {
+      const info = await defaultSshManager.connect(name.trim(), {
+        confirmHostKey: (hostReq) => requestHostKey(event.sender, hostReq),
+        promptSecret: (secretReq) => requestSecret(event.sender, secretReq),
+      });
+      return { ok: true, ...info };
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : 'SSH connect failed' };
+    }
+  });
+
+  ipcMain.handle('jewbot:sshDisconnect', async (_event, target: unknown) => {
+    if (typeof target !== 'string' || !target || target.length > 80) return { ok: false };
+    return { ok: defaultSshManager.disconnect(target) };
+  });
+
+  ipcMain.handle('jewbot:sshExec', async (_event, payload: unknown) => {
+    const req = asSshExec(payload);
+    if (!req) return { ok: false, started: false, needsConfirmation: false, reason: 'Invalid SSH request' } satisfies SshStartResult;
+    const prepared = defaultSshManager.prepareExec(req.command);
+    if (!prepared.ok && !prepared.needsConfirmation) return prepared;
+    if (!prepared.ok && prepared.needsConfirmation && !req.executionId) return prepared;
+    try {
+      const started = defaultSshManager.startExec(req.target, req.command, { executionId: req.executionId });
+      return {
+        ok: true,
+        started: true,
+        sessionId: started.sessionId,
+        execId: started.execId,
+      } satisfies SshStartResult;
+    } catch (err) {
+      const decision = (err as Error & { decision?: SafetyDecision }).decision;
+      if (decision && !decision.ok) {
+        return {
+          ok: false,
+          started: false,
+          needsConfirmation: decision.needsConfirmation,
+          reason: decision.reason,
+          category: decision.category,
+          pattern: decision.pattern,
+        } satisfies SshStartResult;
+      }
+      return {
+        ok: false,
+        started: false,
+        needsConfirmation: false,
+        reason: err instanceof Error ? err.message : 'SSH exec failed',
+      } satisfies SshStartResult;
+    }
+  });
+
+  ipcMain.handle('jewbot:sshConfirm', async (_event, command: unknown) => {
+    if (typeof command !== 'string' || !command.trim() || command.length > 4000) {
+      return { ok: false, started: false, reason: 'Invalid command' } satisfies SshStartResult;
+    }
+    const prepared = defaultSshManager.prepareExec(command);
+    if (prepared.ok) return { ok: true, started: false, needsConfirmation: false } satisfies SshStartResult;
+    if (!prepared.needsConfirmation) return { ...prepared, ok: false, started: false };
+    const { executionId } = issueConfirmation(command);
+    return {
+      ok: true,
+      started: false,
+      needsConfirmation: true,
+      executionId,
+      reason: prepared.reason,
+      category: prepared.category,
+      pattern: prepared.pattern,
+    } satisfies SshStartResult;
+  });
+
+  ipcMain.handle('jewbot:sshKill', async (_event, execId: unknown) => {
+    if (typeof execId !== 'string' || !execId) return { killed: false };
+    return { killed: defaultSshManager.killExec(execId) };
+  });
+
+  ipcMain.on('jewbot:sshHostKeyReply', (_event, payload: unknown) => {
+    const reply = asHostKeyReply(payload);
+    if (!reply) return;
+    const finish = pendingHostKeys.get(reply.confirmId);
+    if (!finish) return;
+    finish(reply.approved);
+  });
+
+  ipcMain.on('jewbot:sshSecretReply', (_event, payload: unknown) => {
+    const reply = asSecretReply(payload);
+    if (!reply) return;
+    const finish = pendingSecrets.get(reply.promptId);
+    if (!finish) return;
+    finish(reply.secret);
+  });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -589,6 +771,11 @@ app.on('window-all-closed', () => {
   for (const finish of pendingEdits.values()) finish(false);
   pendingEdits.clear();
   defaultTerminal.killAll();
+  defaultSshManager.closeAll();
+  for (const finish of pendingHostKeys.values()) finish(false);
+  pendingHostKeys.clear();
+  for (const finish of pendingSecrets.values()) finish(null);
+  pendingSecrets.clear();
   if (process.platform !== 'darwin') app.quit();
 });
 
@@ -774,4 +961,188 @@ function asChatStart(v: unknown): { requestId: string; messages: ChatMessage[] }
   }
   if (!messages.length) return null;
   return { requestId: o.requestId, messages };
+}
+
+function bindSshEvents(): void {
+  const broadcast = (payload: Record<string, unknown>) => {
+    const contents = mainWindow?.webContents;
+    if (!contents || contents.isDestroyed()) return;
+    contents.send('jewbot:sshEvent', payload);
+  };
+  defaultSshManager.on('data', (chunk: SshExecChunk) => {
+    broadcast({
+      type: 'chunk',
+      sessionId: chunk.sessionId,
+      execId: chunk.execId,
+      host: chunk.host,
+      stream: chunk.stream,
+      text: chunk.text,
+    });
+  });
+  defaultSshManager.on('exec', (result: SshExecResult) => {
+    broadcast({
+      type: 'exit',
+      sessionId: result.sessionId,
+      execId: result.execId,
+      host: result.host,
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      status: result.status,
+      killed: result.killed,
+      truncated: result.truncated,
+      timedOut: result.timedOut,
+    });
+  });
+  defaultSshManager.on('connected', (info: SshSessionInfo) => {
+    broadcast({ type: 'connected', ...info });
+  });
+  defaultSshManager.on('disconnected', (info: { sessionId: string; name: string }) => {
+    broadcast({ type: 'disconnected', sessionId: info.sessionId, name: info.name });
+  });
+}
+
+function prepareUiSmokeSsh(): void {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jewbot-m5-ui-'));
+  const hostsPath = path.join(dir, 'hosts.json');
+  const knownPath = path.join(dir, 'known_hosts.json');
+  const keyPath = path.join(dir, 'id_ed25519');
+  fs.writeFileSync(keyPath, '-----BEGIN OPENSSH PRIVATE KEY-----\njewbot-ui-smoke-key\n-----END OPENSSH PRIVATE KEY-----\n', {
+    mode: 0o600,
+  });
+  fs.writeFileSync(
+    hostsPath,
+    JSON.stringify({
+      hosts: [
+        {
+          name: 'pi',
+          host: '127.0.0.1',
+          port: 22,
+          username: 'pi',
+          privateKeyPath: keyPath,
+          askPassphrase: true,
+        },
+      ],
+    }),
+  );
+  uiSshExecs = [];
+  uiSshPassOk = false;
+  uiSshKnownPath = knownPath;
+  const hostKey = Buffer.concat([sshString('ssh-ed25519'), Buffer.from('jewbot-ui-host-key')]);
+  defaultSshManager.configure({
+    hostsPath,
+    knownHostsPath: knownPath,
+    clientFactory: createScriptedClientFactory({
+      hostKey,
+      onConnect(config) {
+        uiSshPassOk = config.passphrase === 'ui-pass-phrase-99';
+      },
+      onExec(command) {
+        uiSshExecs.push(command);
+        if (command.includes('jewbot-ssh-ui')) return { stdout: 'jewbot-ssh-ui\n', stderr: 'ssh-err\n', exitCode: 0 };
+        return { stdout: '', exitCode: 0 };
+      },
+    }),
+  });
+}
+
+function sshString(value: string): Buffer {
+  const body = Buffer.from(value, 'utf8');
+  const out = Buffer.alloc(4 + body.length);
+  out.writeUInt32BE(body.length, 0);
+  body.copy(out, 4);
+  return out;
+}
+
+function requestHostKey(sender: WebContents, req: HostKeyPrompt, signal?: AbortSignal): Promise<boolean> {
+  const confirmId = randomUUID();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (approved: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      pendingHostKeys.delete(confirmId);
+      signal?.removeEventListener('abort', onAbort);
+      resolve(approved === true);
+    };
+    const onAbort = () => finish(false);
+    const timer = setTimeout(() => finish(false), 110_000);
+    pendingHostKeys.set(confirmId, finish);
+    if (signal?.aborted || sender.isDestroyed()) {
+      finish(false);
+      return;
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
+    sender.send('jewbot:sshEvent', {
+      type: 'hostkey_required',
+      confirmId,
+      name: req.name,
+      host: req.host,
+      port: req.port,
+      fingerprint: req.fingerprint,
+      algorithm: req.algorithm,
+      mismatch: req.mismatch,
+      previousFingerprint: req.previousFingerprint,
+    });
+  });
+}
+
+function requestSecret(sender: WebContents, req: SecretPrompt, signal?: AbortSignal): Promise<string | null> {
+  const promptId = randomUUID();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (secret: string | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      pendingSecrets.delete(promptId);
+      signal?.removeEventListener('abort', onAbort);
+      resolve(secret && secret.trim() ? secret : null);
+    };
+    const onAbort = () => finish(null);
+    const timer = setTimeout(() => finish(null), 110_000);
+    pendingSecrets.set(promptId, finish);
+    if (signal?.aborted || sender.isDestroyed()) {
+      finish(null);
+      return;
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
+    sender.send('jewbot:sshEvent', {
+      type: 'secret_required',
+      promptId,
+      name: req.name,
+      host: req.host,
+      username: req.username,
+      kind: req.kind,
+    });
+  });
+}
+
+function asSshExec(v: unknown): { target: string; command: string; executionId?: string } | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o.target !== 'string' || !o.target.trim() || o.target.length > 80) return null;
+  if (typeof o.command !== 'string' || !o.command.trim() || o.command.length > 4000) return null;
+  if (o.executionId !== undefined && (typeof o.executionId !== 'string' || o.executionId.length > 80)) return null;
+  return {
+    target: o.target,
+    command: o.command,
+    executionId: typeof o.executionId === 'string' ? o.executionId : undefined,
+  };
+}
+
+function asHostKeyReply(v: unknown): { confirmId: string; approved: boolean } | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o.confirmId !== 'string' || !o.confirmId || o.confirmId.length > 80) return null;
+  return { confirmId: o.confirmId, approved: o.approved === true };
+}
+
+function asSecretReply(v: unknown): { promptId: string; secret: string | null } | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o.promptId !== 'string' || !o.promptId || o.promptId.length > 80) return null;
+  if (typeof o.secret !== 'string' || !o.secret || o.secret.length > 1024) return { promptId: o.promptId, secret: null };
+  return { promptId: o.promptId, secret: o.secret };
 }

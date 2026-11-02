@@ -4,7 +4,7 @@
 
 Terminal control, SSH to your machines (Dell / Pi / Mac), agentic plan→act→observe loop, file edits with diff preview, project-aware context, and cascade execution across milestones.
 
-> **Status:** Milestone **M4** — project-aware context. The agent sees a compact tree and a few relevant excerpts, and can `find_files` / `search_context` without loading the whole repo. **M5** (SSH sessions) is next.
+> **Status:** Milestone **M5** — SSH sessions. Jewbot connects to allowlisted hosts, confirms the host key on first use, and streams remote command output. **M6** (cascade runner) is next.
 
 ## Why Jewbot?
 
@@ -38,7 +38,7 @@ npm install
 npm start
 ```
 
-That builds the Electron app and opens the chat window. **Agent** mode streams tokens from Ollama, then runs `get_project_summary`, `find_files`, `search_context`, `list_dir`, `read_file`, `write_file`, `apply_edit`, and `run_terminal` inside the open folder. **Chat** mode is the same stream with no tools. Both modes get a compact project snapshot, not a dump of every file.
+That builds the Electron app and opens the chat window. **Agent** mode streams tokens from Ollama, then runs `get_project_summary`, `find_files`, `search_context`, `list_dir`, `read_file`, `write_file`, `apply_edit`, `run_terminal`, and the SSH tools inside the open folder. **Chat** mode is the same stream with no tools. Both modes get a compact project snapshot, not a dump of every file.
 
 Try:
 
@@ -63,6 +63,51 @@ Run echo jewbot in the terminal and tell me what it printed.
 ```
 
 `JEWBOT_TERMINAL_BACKEND=child_process` is the default (separate stdout and stderr). If the optional `node-pty` module is installed, `JEWBOT_TERMINAL_BACKEND=pty` uses a PTY instead; a PTY merges both streams into stdout.
+
+### SSH to another machine
+
+Jewbot talks to machines you list locally. It does not discover hosts, and it does not read passwords from the hosts file. Create `~/.jewbot/hosts.json` (mode `0600` is a good idea) or point `JEWBOT_SSH_HOSTS` at another JSON file:
+
+```json
+{
+  "hosts": [
+    {
+      "name": "dell",
+      "host": "192.168.1.20",
+      "port": 22,
+      "username": "lonnie",
+      "privateKeyPath": "~/.ssh/id_ed25519"
+    },
+    {
+      "name": "pi",
+      "host": "192.168.1.21",
+      "username": "pi",
+      "privateKeyPath": "~/.ssh/id_ed25519",
+      "askPassphrase": true
+    },
+    {
+      "name": "mac",
+      "host": "mac.local",
+      "username": "lonnie",
+      "agent": true
+    }
+  ]
+}
+```
+
+`privateKeyPath` is a path to a key file, never the key text. `agent: true` uses `SSH_AUTH_SOCK`. `askPassphrase: true` (or an encrypted key) and `askPassword: true` open a prompt. The value stays in memory until that host disconnects and is never written to disk. A field named `password`, `passphrase`, or `privateKey` in the file is rejected.
+
+The **SSH** panel lists those hosts. **Connect** opens one session. The first time Jewbot sees a host key it shows the `SHA256:` fingerprint and does not continue until you choose **Trust this key**. That fingerprint is stored in `~/.jewbot/known_hosts.json` (`JEWBOT_SSH_KNOWN_HOSTS` overrides the path). A later fingerprint that does not match asks again and does not replace the stored key unless you confirm the change.
+
+Type a remote command and press **Run**. Stdout and stderr stream into the panel. **Kill** cancels that command. **Disconnect** closes the session. The same destructive patterns as the local terminal (`rm -rf`, `git push --force`, and the rest) open the confirm dialog before anything is sent.
+
+You can also ask the agent:
+
+```text
+List SSH hosts, connect to pi, and run uname -a.
+```
+
+The tools are `ssh_list_hosts`, `ssh_connect`, `ssh_exec`, and `ssh_disconnect`. `ssh_exec` uses the same one-shot confirmation grant as `run_terminal`. The model cannot approve itself, and it cannot connect to a host that is not in the file.
 
 ### Edit a file
 
@@ -115,7 +160,7 @@ npm run typecheck
 npm test
 ```
 
-`npm test` runs the safety smoke, `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn), `npm run test:m2` (destructive classification, a streamed `echo`, session kill, and `run_terminal` through the confirm gate), `npm run test:m3` (diff preview, Accept/Reject, undo, secret-path refusal, and jailed writes on a temp directory), and `npm run test:m4` (gitignore-aware index, secret and symlink jail, `find_files` / `search_context`, and a scripted project-aware agent turn). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, rejects one diff and accepts then undoes another, runs `echo` in the terminal panel, cancels a destructive confirm, and sends one live agent message (it errors cleanly when Ollama is not running).
+`npm test` runs the safety smoke, `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn), `npm run test:m2` (destructive classification, a streamed `echo`, session kill, and `run_terminal` through the confirm gate), `npm run test:m3` (diff preview, Accept/Reject, undo, secret-path refusal, and jailed writes on a temp directory), `npm run test:m4` (gitignore-aware index, secret and symlink jail, `find_files` / `search_context`, and a scripted project-aware agent turn), and `npm run test:m5` (mocked `ssh2`: allowlist refusal, TOFU, streamed exec, passphrase redaction, and `ssh_exec` through the same confirm gate). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, rejects one diff and accepts then undoes another, runs `echo` in the terminal panel, cancels a destructive confirm, connects a mocked SSH host (passphrase plus host-key trust) and cancels a remote destructive command, and sends one live agent message (it errors cleanly when Ollama is not running).
 
 ## Environment
 
@@ -126,6 +171,8 @@ npm test
 | `JEWBOT_PROJECT_ROOT` | process cwd | Directory the agent may list and read. The UI can change it with **Open project**. |
 | `JEWBOT_ALLOW_PAID` | unset/`0` | Must be `1` before any paid or non-local provider host is contacted |
 | `JEWBOT_TERMINAL_BACKEND` | `child_process` | `child_process` keeps stdout and stderr separate. `pty` uses `node-pty` when that optional module loads |
+| `JEWBOT_SSH_HOSTS` | `~/.jewbot/hosts.json` | Allowlist of SSH hosts. Passwords and key material do not belong in this file |
+| `JEWBOT_SSH_KNOWN_HOSTS` | `~/.jewbot/known_hosts.json` | Fingerprints the owner has confirmed. Jewbot writes this after Trust this key |
 
 ## Safety (always on)
 
@@ -134,6 +181,7 @@ npm test
 - File reads and listings are jailed to the opened project root (symlink-resolved) and skip `.gitignore` / secret names (`.env`, keys, `node_modules`, `.git`)
 - The context index uses that same jail. It does not read outside the project, and it does not put secret or binary files into the prompt
 - File writes (`write_file`, `apply_edit`, `propose_edit`) stay in that jail, show a unified diff, and apply only after Accept. Secret paths need that confirm; ignored directories do not open
+- SSH reaches only hosts listed in the local hosts file. The first connection, and any host-key change, waits for you to confirm the fingerprint. Remote destructive commands use the same confirmation grant as the local terminal
 
 ## Reused from JU repos
 

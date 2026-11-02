@@ -34,7 +34,7 @@ logs/
 npm-debug.log*
 .state/
 .jewbot/
-receipts/
+/receipts/
 work/
 
 # Models / large binaries
