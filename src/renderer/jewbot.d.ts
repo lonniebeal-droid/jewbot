@@ -67,6 +67,11 @@ declare global {
         models?: string[];
         spendGate?: string;
         allowPaidApis?: boolean;
+        cascade?: {
+          runState?: string;
+          error?: string | null;
+          tasks?: Array<{ id: string; title: string; status: string; reason?: string; acceptance?: string }>;
+        };
       }>;
       agentRun: (goal: string) => Promise<unknown>;
       startAgent: (payload: { requestId: string; goal: string }) => void;
@@ -107,6 +112,22 @@ declare global {
       sshKill: (execId: string) => Promise<{ killed: boolean }>;
       sshHostKeyReply: (payload: { confirmId: string; approved: boolean }) => void;
       sshSecretReply: (payload: { promptId: string; secret: string | null }) => void;
+      cascadeList: () => Promise<{
+        runState: string;
+        error: string | null;
+        tasks: Array<{ id: string; title: string; status: string; reason?: string; acceptance?: string }>;
+      }>;
+      cascadeAdd: (payload: { title: string; prompt: string; acceptance?: string }) => Promise<{ ok: boolean; reason?: string }>;
+      cascadeStart: () => Promise<{ ok?: boolean; reason?: string; runState?: string }>;
+      cascadePause: () => Promise<{ runState?: string }>;
+      cascadeStop: () => Promise<{ runState?: string }>;
+      cascadeRequeue: (id: string) => Promise<{ ok: boolean; reason?: string }>;
+      cascadeRemove: (id: string) => Promise<{ ok: boolean; reason?: string }>;
+      onCascadeEvent: (cb: (snap: {
+        runState: string;
+        error: string | null;
+        tasks: Array<{ id: string; title: string; status: string; reason?: string; acceptance?: string }>;
+      }) => void) => () => void;
       onSshEvent: (cb: (ev: {
         type: string;
         sessionId?: string;

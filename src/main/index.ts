@@ -18,7 +18,7 @@ import {
 import { FileWorkspace } from '../modules/files';
 import { ContextIndexer } from '../modules/context';
 import { AgentLoop, AgentStreamEvent, DestructiveConfirmRequest, EditConfirmRequest } from '../modules/agent';
-import { CascadeRunner, M0_MILESTONE } from '../modules/cascade';
+import { CascadeAgentOutcome, CascadeRunner, CascadeTask } from '../modules/cascade';
 import { assertLocalSpendOnly, defaultSafetyConfig, issueConfirmation, SafetyDecision } from '../modules/safety';
 
 let mainWindow: BrowserWindow | null = null;
@@ -26,7 +26,17 @@ let projectRoot = resolveInitialRoot();
 let safety = defaultSafetyConfig(projectRoot);
 let files = new FileWorkspace(projectRoot);
 let context = new ContextIndexer(projectRoot);
-const cascade = new CascadeRunner();
+const cascadeStoreRoot =
+  process.env.JEWBOT_UI_SMOKE === '1' ? fs.mkdtempSync(path.join(os.tmpdir(), 'jewbot-m6-ui-')) : projectRoot;
+const cascade = new CascadeRunner({
+  projectRoot,
+  storeRoot: cascadeStoreRoot,
+  files,
+  terminal: defaultTerminal,
+  ssh: defaultSshManager,
+  context,
+  execute: process.env.JEWBOT_UI_SMOKE === '1' ? smokeCascadeExecute : undefined,
+});
 const inflight = new Map<string, AbortController>();
 const pendingConfirms = new Map<string, (approved: boolean) => void>();
 const pendingEdits = new Map<string, (accepted: boolean) => void>();
@@ -63,6 +73,7 @@ function setProjectRoot(next: string): string {
   safety = defaultSafetyConfig(projectRoot);
   files = new FileWorkspace(projectRoot);
   context = new ContextIndexer(projectRoot);
+  cascade.setWorkspace({ projectRoot, files, context });
   return projectRoot;
 }
 
@@ -112,10 +123,10 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
     }
     const report = (await win.webContents.executeJavaScript(`
       (async () => {
-        const ids = ['milestone','goal','send','stop','transcript','status','openProject','modeAgent','modeChat','projectRoot','termCommand','termRun','termKill','termOut','confirmModal','confirmYes','confirmNo','confirmCommand','confirmBlurb','sshHost','sshConnect','sshDisconnect','sshHosts','sshSessions','sshOut','sshCommand','sshRun','sshKill','sshState','sshHostModal','sshHostYes','sshHostNo','sshHostFingerprint','sshSecretModal','sshSecretInput','sshSecretOk'];
+        const ids = ['milestone','goal','send','stop','transcript','status','openProject','modeAgent','modeChat','projectRoot','termCommand','termRun','termKill','termOut','confirmModal','confirmYes','confirmNo','confirmCommand','confirmBlurb','sshHost','sshConnect','sshDisconnect','sshHosts','sshSessions','sshOut','sshCommand','sshRun','sshKill','sshState','sshHostModal','sshHostYes','sshHostNo','sshHostFingerprint','sshSecretModal','sshSecretInput','sshSecretOk','cascadeList','cascadeState','cascadeStart','cascadePause','cascadeStop','cascadeTitle','cascadePrompt','cascadeAccept','cascadeAdd'];
         const missing = ids.filter((id) => !document.getElementById(id));
         const bridge = window.jewbot || {};
-        const hasBridge = ['status','startAgent','startChat','cancelStream','onStreamEvent','pickProjectRoot','terminalStart','terminalConfirm','terminalKill','confirmReply','onTerminalEvent','editReply','editUndo','sshList','sshConnect','sshDisconnect','sshExec','sshConfirm','sshKill','sshHostKeyReply','sshSecretReply','onSshEvent'].every((k) => typeof bridge[k] === 'function');
+        const hasBridge = ['status','startAgent','startChat','cancelStream','onStreamEvent','pickProjectRoot','terminalStart','terminalConfirm','terminalKill','confirmReply','onTerminalEvent','editReply','editUndo','sshList','sshConnect','sshDisconnect','sshExec','sshConfirm','sshKill','sshHostKeyReply','sshSecretReply','onSshEvent','cascadeList','cascadeAdd','cascadeStart','cascadePause','cascadeStop','cascadeRequeue','cascadeRemove','onCascadeEvent'].every((k) => typeof bridge[k] === 'function');
         let status = null;
         let statusError = null;
         try { status = await window.jewbot.status(); }
@@ -213,6 +224,43 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
         const sshCancel = await waitFor(() => document.getElementById('sshOut').innerText.indexOf('not run') >= 0, 2000);
         const sshSecretCleared = document.getElementById('sshSecretInput').value === ''
           && document.getElementById('sshOut').innerText.indexOf('ui-pass-phrase-99') < 0;
+        async function addCascade(title, prompt) {
+          document.getElementById('cascadeTitle').value = title;
+          document.getElementById('cascadePrompt').value = prompt;
+          document.getElementById('cascadeAccept').value = '';
+          document.getElementById('cascadeAdd').click();
+          return waitFor(() => {
+            const row = document.querySelector('#cascadeList [data-task="' + title + '"]');
+            return !!(row && row.dataset.status === 'pending');
+          }, 4000);
+        }
+        function cascadeRow(title) {
+          return document.querySelector('#cascadeList [data-task="' + title + '"]');
+        }
+        const cascadeAddedWait = await addCascade('Wait task', '__cascade_wait__');
+        document.getElementById('cascadeStart').click();
+        const cascadeSawRunning = await waitFor(() => document.getElementById('cascadeState').textContent === 'running', 4000);
+        document.getElementById('cascadeStop').click();
+        const cascadeStopped = await waitFor(() => {
+          const row = cascadeRow('Wait task');
+          return !!(row && row.dataset.status === 'blocked' && (row.dataset.reason || '').indexOf('Stopped') >= 0
+            && document.getElementById('cascadeState').textContent === 'idle');
+        }, 4000);
+        const cascadeAdded = [
+          await addCascade('First task', 'say hello'),
+          await addCascade('Blocked task', '__cascade_block__'),
+          await addCascade('Third task', 'say next'),
+        ];
+        document.getElementById('cascadeStart').click();
+        const cascadeAdvanced = await waitFor(() => {
+          const first = cascadeRow('First task');
+          const blocked = cascadeRow('Blocked task');
+          const third = cascadeRow('Third task');
+          return !!(first && first.dataset.status === 'done'
+            && blocked && blocked.dataset.status === 'blocked' && (blocked.dataset.reason || '').indexOf('confirmation') >= 0
+            && third && third.dataset.status === 'done'
+            && document.getElementById('cascadeState').textContent === 'idle');
+        }, 5000);
         return {
           missing,
           hasBridge,
@@ -249,6 +297,11 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
           sshDialogCommand,
           sshCancel,
           sshSecretCleared,
+          cascadeAddedWait,
+          cascadeSawRunning,
+          cascadeStopped,
+          cascadeAdded: cascadeAdded.every(Boolean),
+          cascadeAdvanced,
         };
       })()
     `)) as {
@@ -287,6 +340,11 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
       sshDialogCommand: string;
       sshCancel: boolean;
       sshSecretCleared: boolean;
+      cascadeAddedWait: boolean;
+      cascadeSawRunning: boolean;
+      cascadeStopped: boolean;
+      cascadeAdded: boolean;
+      cascadeAdvanced: boolean;
     };
     let knownBody = '';
     try {
@@ -300,7 +358,7 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
     const ok =
       report.hasBridge &&
       report.missing.length === 0 &&
-      report.milestone === 'M5' &&
+      report.milestone === 'M6' &&
       !!report.projectRoot &&
       report.sendEnabled &&
       report.streamed &&
@@ -333,6 +391,11 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
       sshKnownSafe &&
       sshEchoRan &&
       sshRmBlocked &&
+      report.cascadeAddedWait &&
+      report.cascadeSawRunning &&
+      report.cascadeStopped &&
+      report.cascadeAdded &&
+      report.cascadeAdvanced &&
       editSmokeFilesOk() &&
       (report.ollamaOk || report.transcript.includes('Cannot reach Ollama'));
     console.log(`UI_SMOKE ${JSON.stringify(report)}`);
@@ -363,12 +426,8 @@ function finish(requestId: string): void {
 app.whenReady().then(() => {
   if (process.env.JEWBOT_UI_SMOKE === '1') prepareUiSmokeSsh();
   bindSshEvents();
+  bindCascadeEvents();
   createWindow();
-  cascade.enqueue({
-    ...M0_MILESTONE,
-    status: 'pending',
-    run: async () => ({ status: 'done', detail: M0_MILESTONE.detail }),
-  });
 
   ipcMain.handle('jewbot:status', async () => {
     const cfg = defaultOllamaConfig();
@@ -376,7 +435,8 @@ app.whenReady().then(() => {
     const probe = await probeOllama(cfg);
     return {
       version: app.getVersion(),
-      milestone: 'M5',
+      milestone: 'M6',
+      cascade: cascade.snapshot(),
       projectRoot,
       allowPaidApis: safety.allowPaidApis,
       spendGate: spend.ok ? 'local-only' : 'paid-blocked',
@@ -385,7 +445,6 @@ app.whenReady().then(() => {
       ollamaError: probe.error ?? null,
       models: probe.models,
       hosts: defaultSshManager.listHosts(),
-      cascade: cascade.list().map((m) => ({ id: m.id, title: m.title, status: m.status })),
     };
   });
 
@@ -663,6 +722,49 @@ app.whenReady().then(() => {
 
   ipcMain.handle('jewbot:contextSummary', async () => context.summarize());
 
+  ipcMain.handle('jewbot:cascadeList', async () => cascade.snapshot());
+
+  ipcMain.handle('jewbot:cascadeAdd', async (_event, payload: unknown) => {
+    const req = asCascadeAdd(payload);
+    if (!req) return { ok: false, reason: 'Invalid cascade task' };
+    try {
+      return { ok: true, task: cascade.enqueue(req) };
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('jewbot:cascadeStart', async () => {
+    try {
+      await cascade.start();
+      return { ok: true, ...cascade.snapshot() };
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : String(err), ...cascade.snapshot() };
+    }
+  });
+
+  ipcMain.handle('jewbot:cascadePause', async () => {
+    cascade.pause();
+    return cascade.snapshot();
+  });
+
+  ipcMain.handle('jewbot:cascadeStop', async () => {
+    cascade.stop();
+    return cascade.snapshot();
+  });
+
+  ipcMain.handle('jewbot:cascadeRequeue', async (_event, id: unknown) => {
+    if (typeof id !== 'string') return { ok: false, reason: 'Invalid task' };
+    const task = cascade.requeue(id);
+    return task ? { ok: true, task } : { ok: false, reason: 'Task cannot be requeued' };
+  });
+
+  ipcMain.handle('jewbot:cascadeRemove', async (_event, id: unknown) => {
+    if (typeof id !== 'string') return { ok: false, reason: 'Invalid task' };
+    const ok = cascade.remove(id);
+    return ok ? { ok: true } : { ok: false, reason: 'Task cannot be removed' };
+  });
+
   ipcMain.handle('jewbot:sshList', async () => defaultSshManager.inventory());
 
   ipcMain.handle('jewbot:sshConnect', async (event, name: unknown) => {
@@ -771,6 +873,7 @@ app.on('window-all-closed', () => {
   for (const finish of pendingEdits.values()) finish(false);
   pendingEdits.clear();
   defaultTerminal.killAll();
+  cascade.stop();
   defaultSshManager.closeAll();
   for (const finish of pendingHostKeys.values()) finish(false);
   pendingHostKeys.clear();
@@ -1145,4 +1248,49 @@ function asSecretReply(v: unknown): { promptId: string; secret: string | null } 
   if (typeof o.promptId !== 'string' || !o.promptId || o.promptId.length > 80) return null;
   if (typeof o.secret !== 'string' || !o.secret || o.secret.length > 1024) return { promptId: o.promptId, secret: null };
   return { promptId: o.promptId, secret: o.secret };
+}
+
+function bindCascadeEvents(): void {
+  cascade.on('update', () => {
+    const contents = mainWindow?.webContents;
+    if (!contents || contents.isDestroyed()) return;
+    contents.send('jewbot:cascadeEvent', cascade.snapshot());
+  });
+}
+
+function smokeCascadeExecute(task: CascadeTask, signal: AbortSignal): Promise<CascadeAgentOutcome> {
+  if (task.prompt.includes('__cascade_wait__')) {
+    return new Promise((resolve) => {
+      const finish = () => resolve({ status: 'blocked', reason: 'Stopped by owner', steps: [] });
+      if (signal.aborted) {
+        finish();
+        return;
+      }
+      signal.addEventListener('abort', finish, { once: true });
+    });
+  }
+  if (task.prompt.includes('__cascade_block__')) {
+    return Promise.resolve({
+      status: 'blocked',
+      reason: 'Destructive shell pattern (rm -rf) requires owner confirmation before it can run.',
+      steps: [{ n: 1, tool: 'run_terminal', observation: 'BLOCKED: command was not executed.' }],
+    });
+  }
+  return Promise.resolve({
+    status: 'done',
+    finalText: 'cascade ok',
+    steps: [{ n: 1, thought: 'FINAL: cascade ok' }],
+  });
+}
+
+function asCascadeAdd(v: unknown): { title: string; prompt: string; acceptance?: string } | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  if (typeof o.title !== 'string' || typeof o.prompt !== 'string') return null;
+  if (o.acceptance !== undefined && typeof o.acceptance !== 'string') return null;
+  return {
+    title: o.title,
+    prompt: o.prompt,
+    acceptance: typeof o.acceptance === 'string' ? o.acceptance : undefined,
+  };
 }

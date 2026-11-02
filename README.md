@@ -4,7 +4,7 @@
 
 Terminal control, SSH to your machines (Dell / Pi / Mac), agentic plan→act→observe loop, file edits with diff preview, project-aware context, and cascade execution across milestones.
 
-> **Status:** Milestone **M5** — SSH sessions. Jewbot connects to allowlisted hosts, confirms the host key on first use, and streams remote command output. **M6** (cascade runner) is next.
+> **Status:** Milestone **M6** — cascade execution. A local task queue runs one task through the Ollama agent, then starts the next. A step that needs you (destructive command, file Accept, SSH host key) is marked blocked and skipped, never self-approved. **M7** (packaging) is next.
 
 ## Why Jewbot?
 
@@ -135,6 +135,26 @@ Skipped by default: anything matched by `.gitignore` (including nested files), `
 Where is ContextIndexer defined? Show the file and the line.
 ```
 
+### Cascade a queue of tasks
+
+The **Cascade** panel runs a list of tasks, one after another, on the local model. The queue is stored in the open project at `.jewbot/cascade.json`. That directory is gitignored. Each finished task also gets a markdown receipt at `.jewbot/receipts/<id>.md` (what the agent ran, a short output summary, and the result).
+
+Add a title and a prompt. An acceptance command is optional. **Start** picks the next `pending` task, runs the prompt through the same agent loop as chat, then runs the acceptance command in the project terminal if you set one. Exit 0 marks the task done and the next pending task starts immediately. You do not have to press Start again.
+
+**Pause** lets the current task finish and then waits. **Stop** (in the panel, or the chat Stop button) aborts the current task, marks it blocked with "Stopped by owner", and does not start another. **Requeue** puts a blocked or failed task back to pending. That does not approve anything.
+
+Cascade will not approve a dangerous step for you. If the model asks to run a destructive command, write a file, read a secret, confirm an SSH host key, or type an SSH passphrase, that task is marked **blocked** with the reason and the runner moves on. Do the step yourself from the chat, terminal, or SSH panel if you want it done. A failed acceptance check, a model error, too many steps, or the time budget marks the task **failed** and the runner also moves on.
+
+A task left `running` because the app quit is put back to `pending` the next time the queue is loaded.
+
+Limits, overridable from the environment: 8 steps per task and 3 minutes of wall time. Paid or non-local model hosts stay refused unless `JEWBOT_ALLOW_PAID=1`.
+
+```text
+Title: Readme check
+Prompt: Read README.md and reply with FINAL and the one-line description.
+Acceptance: node -e "process.exit(0)"
+```
+
 ### Destructive commands
 
 Jewbot does not run destructive commands by itself. Patterns such as `rm -rf`, `git push --force` / `git push -f`, `mkfs`, `dd of=` / `dd if=`, `chmod -R 777 /`, `git reset --hard`, and `git clean -fd` open a confirm dialog with the exact command.
@@ -160,7 +180,7 @@ npm run typecheck
 npm test
 ```
 
-`npm test` runs the safety smoke, `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn), `npm run test:m2` (destructive classification, a streamed `echo`, session kill, and `run_terminal` through the confirm gate), `npm run test:m3` (diff preview, Accept/Reject, undo, secret-path refusal, and jailed writes on a temp directory), `npm run test:m4` (gitignore-aware index, secret and symlink jail, `find_files` / `search_context`, and a scripted project-aware agent turn), and `npm run test:m5` (mocked `ssh2`: allowlist refusal, TOFU, streamed exec, passphrase redaction, and `ssh_exec` through the same confirm gate). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, rejects one diff and accepts then undoes another, runs `echo` in the terminal panel, cancels a destructive confirm, connects a mocked SSH host (passphrase plus host-key trust) and cancels a remote destructive command, and sends one live agent message (it errors cleanly when Ollama is not running).
+`npm test` runs the safety smoke, `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn), `npm run test:m2` (destructive classification, a streamed `echo`, session kill, and `run_terminal` through the confirm gate), `npm run test:m3` (diff preview, Accept/Reject, undo, secret-path refusal, and jailed writes on a temp directory), `npm run test:m4` (gitignore-aware index, secret and symlink jail, `find_files` / `search_context`, and a scripted project-aware agent turn), `npm run test:m5` (mocked `ssh2`: allowlist refusal, TOFU, streamed exec, passphrase redaction, and `ssh_exec` through the same confirm gate), and `npm run test:m6` (mocked Ollama: cascade auto-advance, blocked-then-skip, acceptance pass/fail, stop, pause, wall time, the step cap, and the paid-host refusal). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, rejects one diff and accepts then undoes another, runs `echo` in the terminal panel, cancels a destructive confirm, connects a mocked SSH host (passphrase plus host-key trust) and cancels a remote destructive command, stops a cascade task and then auto-advances past a blocked one, and sends one live agent message (it errors cleanly when Ollama is not running).
 
 ## Environment
 
@@ -173,6 +193,8 @@ npm test
 | `JEWBOT_TERMINAL_BACKEND` | `child_process` | `child_process` keeps stdout and stderr separate. `pty` uses `node-pty` when that optional module loads |
 | `JEWBOT_SSH_HOSTS` | `~/.jewbot/hosts.json` | Allowlist of SSH hosts. Passwords and key material do not belong in this file |
 | `JEWBOT_SSH_KNOWN_HOSTS` | `~/.jewbot/known_hosts.json` | Fingerprints the owner has confirmed. Jewbot writes this after Trust this key |
+| `JEWBOT_CASCADE_MAX_STEPS` | `8` | Most agent steps one cascade task may take |
+| `JEWBOT_CASCADE_MAX_MS` | `180000` | Wall-time budget for one cascade task, including its acceptance command |
 
 ## Safety (always on)
 
@@ -182,6 +204,7 @@ npm test
 - The context index uses that same jail. It does not read outside the project, and it does not put secret or binary files into the prompt
 - File writes (`write_file`, `apply_edit`, `propose_edit`) stay in that jail, show a unified diff, and apply only after Accept. Secret paths need that confirm; ignored directories do not open
 - SSH reaches only hosts listed in the local hosts file. The first connection, and any host-key change, waits for you to confirm the fingerprint. Remote destructive commands use the same confirmation grant as the local terminal
+- Cascade runs only the local model, stops at a step that needs you, and will not approve that step itself. The queue and receipts stay in the project's `.jewbot/` directory
 
 ## Reused from JU repos
 
