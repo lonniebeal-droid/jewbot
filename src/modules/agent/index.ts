@@ -7,7 +7,7 @@
 import { chatStream, ChatMessage, defaultOllamaConfig, OllamaConfig } from '../llm';
 import { DiffPreview, EditSpec, FileWorkspace, SecretPathError } from '../files';
 import { formatTerminalObservation, TerminalResult, TerminalSession } from '../terminal';
-import { SshManager } from '../ssh';
+import { formatSshObservation, HostKeyPrompt, SecretPrompt, SshExecResult, SshManager } from '../ssh';
 import { ContextIndexer, formatFindResult, formatSearchResult } from '../context';
 import { checkShellCommand, issueConfirmation } from '../safety';
 
@@ -39,6 +39,7 @@ export type AgentStreamEvent =
   | { type: 'tool_call'; name: string; args: Record<string, unknown> }
   | { type: 'tool_result'; name: string; args: Record<string, unknown>; observation: string }
   | { type: 'terminal_chunk'; stream: 'stdout' | 'stderr'; text: string }
+  | { type: 'ssh_chunk'; stream: 'stdout' | 'stderr'; text: string; host?: string }
   | { type: 'final'; text: string }
   | { type: 'error'; message: string }
   | { type: 'done'; result: AgentRunResult };
@@ -85,6 +86,16 @@ export interface AgentDeps {
   confirmSecret?: (req: SecretConfirmRequest) => Promise<boolean>;
   /** Fired after a write lands, so the UI can undo that edit id on this workspace. */
   onEditApplied?: (editId: string, workspace: FileWorkspace) => void;
+  /**
+   * Human gate for an unseen or changed SSH host key. Missing callback or false
+   * means the connection is refused. The model cannot satisfy this gate.
+   */
+  confirmHostKey?: (req: HostKeyPrompt) => Promise<boolean>;
+  /**
+   * Asks the owner for a passphrase or password. The value stays in the SSH
+   * session memory and is not returned to the model. Null cancels the connect.
+   */
+  promptSshSecret?: (req: SecretPrompt) => Promise<string | null>;
 }
 
 const OBSERVATION_MAX = 12_000;
@@ -104,12 +115,17 @@ Live tools (paths stay inside the project root; the shell cwd is the project roo
 - apply_edit {"tool":"apply_edit","args":{"path":"relative/file.txt","search":"exact unique text","replace":"new text"}}
 - propose_edit accepts either content or search/replace (same gate as write_file)
 - run_terminal {"tool":"run_terminal","args":{"command":"echo hello"}}
+- ssh_list_hosts {"tool":"ssh_list_hosts","args":{}}
+- ssh_connect {"tool":"ssh_connect","args":{"host":"pi"}}
+- ssh_exec {"tool":"ssh_exec","args":{"host":"pi","command":"uname -a"}}
+- ssh_disconnect {"tool":"ssh_disconnect","args":{"host":"pi"}}
 
 The user message starts with a compact project tree and, when the goal names a file or symbol, a few excerpts. That is not the whole repo. Secret files are not in the index. Use find_files and search_context before guessing paths.
 Put the JSON object on its own line. One tool per turn.
 write_file, propose_edit, and apply_edit show a unified diff and do not change the file until the owner presses Accept. If OBSERVE says REJECTED or UNCHANGED, nothing was written — do not claim it was. You cannot approve your own edit.
 Secret paths (.env, private keys) are refused until the owner confirms. Do not expect their existing contents in OBSERVE.
 run_terminal streams stdout and stderr back as OBSERVE. You cannot approve your own command.
+ssh_list_hosts shows configured hosts only. ssh_connect opens one of those hosts. The first connection asks the owner to confirm the host key fingerprint. ssh_exec streams remote stdout and stderr and uses the same destructive-command gate as the local terminal. You cannot approve your own remote command, and you cannot connect to a host that is not configured.
 Destructive commands (rm -rf, git push --force, mkfs, dd of=, chmod -R 777 /, and similar) do not run until the owner confirms in the UI. If OBSERVE says BLOCKED, the command did not run — do not claim it did.
 ask_owner pauses for a human. Do not claim a tool ran unless you emitted its JSON.`;
 
@@ -221,6 +237,7 @@ export class AgentLoop {
 
       let rawObservation: string;
       if (tool.name === 'run_terminal') rawObservation = yield* this.observeTerminal(tool, signal);
+      else if (tool.name === 'ssh_exec') rawObservation = yield* this.observeSsh(tool, signal);
       else rawObservation = await this.dispatch(tool, signal);
       const observation = truncate(rawObservation, OBSERVATION_MAX);
       this.status = 'observing';
@@ -275,16 +292,18 @@ export class AgentLoop {
           return await this.observeEdit(tool, signal);
         case 'run_terminal':
           return 'ERROR: run_terminal did not pass the safety gate, so it was not executed.';
-        case 'ssh_exec': {
-          const host = String(tool.args.host ?? '');
-          const cmd = String(tool.args.command ?? '');
-          const result = await this.deps.ssh.exec(host, cmd, {});
-          return JSON.stringify(result);
-        }
+        case 'ssh_list_hosts':
+          return this.observeSshHosts();
+        case 'ssh_connect':
+          return await this.observeSshConnect(tool, signal);
+        case 'ssh_disconnect':
+          return this.observeSshDisconnect(tool);
+        case 'ssh_exec':
+          return 'ERROR: ssh_exec did not pass the safety gate, so it was not executed.';
         case 'ask_owner':
           return String(tool.args.question ?? 'Owner input required');
         default:
-          return `Unknown tool: ${tool.name}. Live tools: get_project_summary, find_files, search_context, list_dir, read_file, write_file, apply_edit, propose_edit, run_terminal.`;
+          return `Unknown tool: ${tool.name}. Live tools: get_project_summary, find_files, search_context, list_dir, read_file, write_file, apply_edit, propose_edit, run_terminal, ssh_list_hosts, ssh_connect, ssh_exec, ssh_disconnect.`;
       }
     } catch (err) {
       return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
@@ -474,6 +493,133 @@ export class AgentLoop {
     if (!result) return 'ERROR: terminal produced no result';
     return formatTerminalObservation(result);
   }
+
+  private observeSshHosts(): string {
+    const hosts = this.deps.ssh.listHosts();
+    if (!hosts.length) return 'No SSH hosts are configured. The owner adds them in ~/.jewbot/hosts.json.';
+    return hosts.map((host) => `${host.name} ${host.username}@${host.host}:${host.port} auth=${host.auth}`).join('\n');
+  }
+
+  private async observeSshConnect(tool: AgentToolCall, signal?: AbortSignal): Promise<string> {
+    const host = sshHostArg(tool.args);
+    if (!host) return 'ERROR: ssh_connect requires a host name from ssh_list_hosts';
+    try {
+      const info = await this.deps.ssh.connect(host, {
+        confirmHostKey: this.deps.confirmHostKey,
+        promptSecret: this.deps.promptSshSecret,
+        signal,
+      });
+      return `CONNECTED ${info.name} session ${info.sessionId} ${info.username}@${info.host}:${info.port} fingerprint ${info.fingerprint}`;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/not allowlisted|not configured/i.test(message)) {
+        return `ERROR: ${message} Nothing was connected.`;
+      }
+      if (/denied|cancelled|not confirmed|verification failed|prompt/i.test(message)) {
+        return `REFUSED: ${message} Nothing was connected.`;
+      }
+      return `ERROR: ${message}`;
+    }
+  }
+
+  private observeSshDisconnect(tool: AgentToolCall): string {
+    const host = sshHostArg(tool.args) || String(tool.args.sessionId ?? '').trim();
+    if (!host) return 'ERROR: ssh_disconnect requires a host name or session id';
+    return this.deps.ssh.disconnect(host) ? `DISCONNECTED ${host}` : `ERROR: no SSH session named ${host}`;
+  }
+
+  /**
+   * Runs ssh_exec only after the same destructive-command gate as the local terminal.
+   * args.approved and args.executionId from the model are ignored.
+   */
+  private async *observeSsh(
+    tool: AgentToolCall,
+    signal?: AbortSignal,
+  ): AsyncGenerator<AgentStreamEvent, string, unknown> {
+    const host = sshHostArg(tool.args);
+    const command = String(tool.args.command ?? '');
+    if (!host) return 'ERROR: ssh_exec requires a host name';
+    const decision = checkShellCommand(command);
+    if (!decision.ok && !decision.needsConfirmation) return `ERROR: ${decision.reason}`;
+
+    let executionId: string | undefined;
+    if (!decision.ok) {
+      const approved = this.deps.confirmDestructive
+        ? await this.deps.confirmDestructive({
+            command,
+            reason: decision.reason,
+            category: decision.category,
+          })
+        : false;
+      if (!approved || signal?.aborted) {
+        return `BLOCKED: command was not executed. ${decision.reason} The owner did not confirm. Do not retry unless the owner asks.`;
+      }
+      executionId = issueConfirmation(command).executionId;
+    }
+    if (signal?.aborted) return 'BLOCKED: cancelled before execution.';
+
+    const queue: AgentStreamEvent[] = [];
+    let wake: (() => void) | null = null;
+    let finished: SshExecResult | null = null;
+    let failed: unknown = null;
+    const notify = () => {
+      const fn = wake;
+      wake = null;
+      fn?.();
+    };
+
+    const pending = this.deps.ssh
+      .exec(host, command, {
+        executionId,
+        signal,
+        onChunk: (chunk) => {
+          queue.push({ type: 'ssh_chunk', stream: chunk.stream, text: chunk.text, host: chunk.host });
+          notify();
+        },
+      })
+      .then(
+        (result) => {
+          finished = result;
+          notify();
+        },
+        (err: unknown) => {
+          failed = err;
+          notify();
+        },
+      );
+
+    while (true) {
+      while (queue.length) {
+        const ev = queue.shift();
+        if (ev) yield ev;
+      }
+      if (finished || failed) break;
+      await new Promise<void>((resolve) => {
+        if (finished || failed || queue.length) {
+          resolve();
+          return;
+        }
+        wake = resolve;
+      });
+    }
+    try {
+      await pending;
+    } catch (err) {
+      failed = failed ?? err;
+    }
+    if (failed) {
+      const message = failed instanceof Error ? failed.message : String(failed);
+      return `ERROR: ${message}`;
+    }
+    const result = finished;
+    if (!result) return 'ERROR: SSH produced no result';
+    return formatSshObservation(result);
+  }
+}
+
+function sshHostArg(args: Record<string, unknown>): string {
+  const value = args.host ?? args.name ?? args.target;
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 export function specFromArgs(args: Record<string, unknown>): EditSpec {

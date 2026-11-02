@@ -92,9 +92,12 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 
 ### 5. SSH (`src/modules/ssh`)
 
-- Session manager over `ssh2` (key-based / agent; no passwords stored in repo).
-- Connect / run / disconnect; multiple named hosts (Dell, Pi, Mac).
-- Patterns reused from **ju-command-center** `ju_fleet_remote_probe.py`: BatchMode, ConnectTimeout, allowlisted hosts, receipt-style results — no arbitrary credential embedding.
+- Session manager over `ssh2`. Auth is a private-key path or `ssh-agent`. A passphrase or password is prompted in the UI and kept in memory until disconnect. The hosts file is rejected if it contains `password`, `passphrase`, or an inline `privateKey`.
+- The hosts file (`~/.jewbot/hosts.json`, or `JEWBOT_SSH_HOSTS`) is the allowlist. Unknown names are refused.
+- First connect shows the server host-key fingerprint (`SHA256:`) and stores it only after the owner confirms (TOFU) in `~/.jewbot/known_hosts.json`. A changed fingerprint asks again.
+- Sessions: open, list, close. `ssh_exec` streams stdout/stderr into the panel and the agent observe loop. Kill cancels the remote command. One running command per session.
+- Agent tools: `ssh_list_hosts`, `ssh_connect`, `ssh_exec`, `ssh_disconnect`. `ssh_exec` uses the same destructive-pattern gate and one-shot grant as the local terminal. The model cannot self-approve.
+- Patterns reused from **ju-command-center** `ju_fleet_remote_probe.py`: timeouts, allowlisted hosts, receipt-style results — no embedded credentials.
 
 ### 6. File editing + diff (`src/modules/files`)
 
@@ -135,7 +138,7 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 | **M2** | Terminal streaming + Safety destructive confirmation (**done**) |
 | **M3** | File edit + diff preview apply (**done**) |
 | **M4** | Context indexer (.gitignore-aware) (**done**) |
-| **M5** | SSH sessions + remote exec |
+| **M5** | SSH sessions + remote exec (**done**) |
 | **M6** | Cascade runner wired to milestones |
 | **M7** | Polish UI + packaging |
 

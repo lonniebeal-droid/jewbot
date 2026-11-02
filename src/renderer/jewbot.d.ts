@@ -60,6 +60,7 @@ declare global {
       status: () => Promise<{
         milestone?: string;
         projectRoot?: string;
+        hosts?: Array<{ name: string; host?: string; port?: number; username?: string; auth?: string }>;
         ollama?: { host?: string; model?: string };
         ollamaOk?: boolean;
         ollamaError?: string | null;
@@ -85,6 +86,51 @@ declare global {
       editUndo: (editId: string) => Promise<{ ok: boolean; filePath?: string; action?: string; reason?: string }>;
       onTerminalEvent: (cb: (ev: TerminalPanelEvent) => void) => () => void;
       contextSummary: () => Promise<unknown>;
+      sshList: () => Promise<{
+        hosts?: Array<{ name: string; host: string; port: number; username: string; auth: string }>;
+        sessions?: Array<{ name: string; sessionId: string; fingerprint?: string }>;
+        error?: string | null;
+      }>;
+      sshConnect: (name: string) => Promise<{ ok: boolean; reason?: string; sessionId?: string; fingerprint?: string }>;
+      sshDisconnect: (target: string) => Promise<{ ok: boolean }>;
+      sshExec: (payload: { target: string; command: string; executionId?: string }) => Promise<{
+        ok: boolean;
+        started: boolean;
+        execId?: string;
+        sessionId?: string;
+        needsConfirmation?: boolean;
+        reason?: string;
+        category?: string;
+        executionId?: string;
+      }>;
+      sshConfirm: (command: string) => Promise<{ ok: boolean; executionId?: string; reason?: string }>;
+      sshKill: (execId: string) => Promise<{ killed: boolean }>;
+      sshHostKeyReply: (payload: { confirmId: string; approved: boolean }) => void;
+      sshSecretReply: (payload: { promptId: string; secret: string | null }) => void;
+      onSshEvent: (cb: (ev: {
+        type: string;
+        sessionId?: string;
+        execId?: string;
+        stream?: 'stdout' | 'stderr';
+        text?: string;
+        exitCode?: number | null;
+        stdout?: string;
+        stderr?: string;
+        killed?: boolean;
+        timedOut?: boolean;
+        truncated?: boolean;
+        status?: string;
+        name?: string;
+        host?: string;
+        port?: number;
+        username?: string;
+        fingerprint?: string;
+        algorithm?: string;
+        mismatch?: boolean;
+        confirmId?: string;
+        promptId?: string;
+        kind?: string;
+      }) => void) => () => void;
     };
   }
 }

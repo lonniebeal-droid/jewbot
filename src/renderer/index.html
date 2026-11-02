@@ -45,9 +45,13 @@
     .composer textarea { flex: 1; resize: vertical; min-height: 52px; }
     .composer input { flex: 1; width: auto; min-width: 0; }
     .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-    #status { overflow: auto; max-height: 220px; }
-    .side { gap: 12px; }
-    .term-block { display: flex; flex-direction: column; min-height: 0; flex: 1; gap: 8px; }
+    .side { gap: 12px; overflow: auto; }
+    #status { overflow: auto; max-height: 160px; }
+    .term-block { display: flex; flex-direction: column; min-height: 160px; flex: 1; gap: 8px; }
+    select { background: #0f1115; color: #e8eaed; border: 1px solid #2a2f3a; border-radius: 6px; padding: 8px; font: inherit; max-width: 100%; }
+    .ssh-hosts, .ssh-sessions { margin: 0; white-space: pre-wrap; max-height: 72px; overflow: auto; }
+    .dialog.neutral { border-color: #30363d; }
+    .dialog.mismatch { border-color: #d29922; }
     .term-out { flex: 1; overflow: auto; background: #0b0d12; border-radius: 6px; padding: 8px; min-height: 140px; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     .stdout { color: #d0d7de; }
     .stderr { color: #ffb4b4; }
@@ -70,7 +74,7 @@
 <body>
   <header>
     <h1>JEWBOT</h1>
-    <span class="badge" id="milestone">M4</span>
+    <span class="badge" id="milestone">M5</span>
     <span class="muted" id="spend">$0 · Ollama</span>
     <span class="root" id="projectRoot" title="">…</span>
     <button class="secondary" id="openProject" type="button">Open project</button>
@@ -83,7 +87,7 @@
         <button class="secondary mode" id="modeChat" type="button">Chat</button>
         <span class="muted" id="phase"></span>
       </div>
-      <p class="muted" id="hint">Agent can list, search, read, and edit files in this project. A compact tree is included; the whole repo is not. Edits show a diff and apply only after Accept. Destructive shell commands ask first.</p>
+      <p class="muted" id="hint">Agent can list, search, read, and edit files in this project, and run commands on allowlisted SSH hosts. A compact tree is included; the whole repo is not. Edits show a diff and apply only after Accept. Destructive commands ask first.</p>
       <div id="transcript"></div>
       <div class="composer">
         <textarea id="goal" rows="2" placeholder="Ask Jewbot…  (Enter to send, Shift+Enter for newline)"></textarea>
@@ -112,6 +116,26 @@
         </div>
         <p class="muted" id="termHint">Runs in the open project and streams stdout and stderr. Destructive commands ask before they run.</p>
       </div>
+      <div class="term-block">
+        <div class="row">
+          <h3 style="margin:0">SSH</h3>
+          <span class="muted" id="sshState">idle</span>
+        </div>
+        <div class="row">
+          <select id="sshHost" aria-label="SSH host"></select>
+          <button id="sshConnect" type="button">Connect</button>
+          <button class="secondary" id="sshDisconnect" type="button" disabled>Disconnect</button>
+        </div>
+        <pre id="sshHosts" class="muted ssh-hosts">Loading hosts…</pre>
+        <pre id="sshSessions" class="muted ssh-sessions">(no sessions)</pre>
+        <pre id="sshOut" class="term-out" data-empty="1">(no output yet)</pre>
+        <div class="composer">
+          <input id="sshCommand" type="text" placeholder="uname -a" spellcheck="false" />
+          <button id="sshRun" type="button" disabled>Run</button>
+          <button class="secondary" id="sshKill" type="button" disabled>Kill</button>
+        </div>
+        <p class="muted" id="sshHint">Only hosts listed in ~/.jewbot/hosts.json. The first connection asks you to confirm the host key. Passphrases stay in memory for the session and are not saved.</p>
+      </div>
     </div>
   </main>
   <div id="confirmModal" class="modal" hidden>
@@ -124,6 +148,29 @@
       <div class="row">
         <button class="secondary" id="confirmNo" type="button">Cancel</button>
         <button class="danger" id="confirmYes" type="button">Run anyway</button>
+      </div>
+    </div>
+  </div>
+  <div id="sshSecretModal" class="modal" hidden>
+    <div class="dialog neutral" role="dialog" aria-modal="true" aria-labelledby="sshSecretTitle">
+      <h3 id="sshSecretTitle">SSH passphrase</h3>
+      <p class="muted" id="sshSecretBlurb">Held in memory for this session only. It is not saved and is not sent to the model.</p>
+      <input id="sshSecretInput" type="password" autocomplete="off" spellcheck="false" />
+      <div class="row">
+        <button class="secondary" id="sshSecretCancel" type="button">Cancel</button>
+        <button id="sshSecretOk" type="button">Continue</button>
+      </div>
+    </div>
+  </div>
+  <div id="sshHostModal" class="modal" hidden>
+    <div class="dialog neutral" id="sshHostDialog" role="dialog" aria-modal="true" aria-labelledby="sshHostTitle">
+      <h3 id="sshHostTitle">Confirm host key</h3>
+      <p id="sshHostReason">First connection. Confirm this fingerprint matches the machine before trusting it.</p>
+      <p class="muted" id="sshHostWhere"></p>
+      <pre id="sshHostFingerprint"></pre>
+      <div class="row">
+        <button class="secondary" id="sshHostNo" type="button">Reject</button>
+        <button id="sshHostYes" type="button">Trust this key</button>
       </div>
     </div>
   </div>

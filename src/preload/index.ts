@@ -25,6 +25,44 @@ export interface StreamEvent {
   tool?: string;
 }
 
+export interface SshPanelEvent {
+  type: 'chunk' | 'exit' | 'connected' | 'disconnected' | 'hostkey_required' | 'secret_required';
+  sessionId?: string;
+  execId?: string;
+  stream?: 'stdout' | 'stderr';
+  text?: string;
+  exitCode?: number | null;
+  stdout?: string;
+  stderr?: string;
+  timedOut?: boolean;
+  truncated?: boolean;
+  killed?: boolean;
+  status?: string;
+  name?: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  fingerprint?: string;
+  algorithm?: string;
+  mismatch?: boolean;
+  previousFingerprint?: string;
+  confirmId?: string;
+  promptId?: string;
+  kind?: 'passphrase' | 'password';
+}
+
+export interface SshStartResult {
+  ok: boolean;
+  started: boolean;
+  sessionId?: string;
+  execId?: string;
+  needsConfirmation?: boolean;
+  reason?: string;
+  category?: string;
+  pattern?: string;
+  executionId?: string;
+}
+
 export interface TerminalPanelEvent {
   type: 'chunk' | 'exit';
   sessionId: string;
@@ -79,6 +117,20 @@ contextBridge.exposeInMainWorld('jewbot', {
     return () => ipcRenderer.removeListener('jewbot:terminalEvent', listener);
   },
   contextSummary: () => ipcRenderer.invoke('jewbot:contextSummary'),
+  sshList: () => ipcRenderer.invoke('jewbot:sshList'),
+  sshConnect: (name: string) => ipcRenderer.invoke('jewbot:sshConnect', name),
+  sshDisconnect: (target: string) => ipcRenderer.invoke('jewbot:sshDisconnect', target) as Promise<{ ok: boolean }>,
+  sshExec: (payload: { target: string; command: string; executionId?: string }) =>
+    ipcRenderer.invoke('jewbot:sshExec', payload) as Promise<SshStartResult>,
+  sshConfirm: (command: string) => ipcRenderer.invoke('jewbot:sshConfirm', command) as Promise<SshStartResult>,
+  sshKill: (execId: string) => ipcRenderer.invoke('jewbot:sshKill', execId) as Promise<{ killed: boolean }>,
+  sshHostKeyReply: (payload: { confirmId: string; approved: boolean }) => ipcRenderer.send('jewbot:sshHostKeyReply', payload),
+  sshSecretReply: (payload: { promptId: string; secret: string | null }) => ipcRenderer.send('jewbot:sshSecretReply', payload),
+  onSshEvent: (cb: (ev: SshPanelEvent) => void) => {
+    const listener = (_event: IpcRendererEvent, data: SshPanelEvent) => cb(data);
+    ipcRenderer.on('jewbot:sshEvent', listener);
+    return () => ipcRenderer.removeListener('jewbot:sshEvent', listener);
+  },
 });
 
 export {};
