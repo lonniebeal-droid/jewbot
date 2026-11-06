@@ -3,7 +3,9 @@
  *
  * Speaks the Ollama HTTP API (NDJSON /api/chat and /api/tags).
  * Localhost is always allowed. Any other host, and every known paid
- * provider hostname, is refused unless JEWBOT_ALLOW_PAID=1.
+ * provider hostname (including Grok / xAI), is refused unless
+ * JEWBOT_ALLOW_PAID=1. Hub modules that chat call this file plus
+ * `assertLocalSpendOnly` from safety.
  */
 
 import { assertLocalSpendOnly } from '../safety';
@@ -48,6 +50,7 @@ const PAID_PROVIDER_SUFFIXES = [
   'deepseek.com',
   'perplexity.ai',
   'x.ai',
+  'grok.com',
 ];
 
 export function normalizeOllamaHost(raw: string | undefined): string {
@@ -114,8 +117,8 @@ export function isPaidProviderHost(host: string): boolean {
  */
 export function assertOllamaAllowed(cfg: OllamaConfig): void {
   const host = normalizeOllamaHost(cfg.host);
-  if (isLocalOllamaHost(host) && !isPaidProviderHost(host)) return;
   const decision = assertLocalSpendOnly(cfg.allowPaidApis);
+  if (isLocalOllamaHost(host) && !isPaidProviderHost(host)) return;
   if (!decision.ok) {
     const kind = isPaidProviderHost(host) ? 'paid provider' : 'non-local host';
     throw new Error(`${decision.reason} Refusing ${kind} ${host}.`);

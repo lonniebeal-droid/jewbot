@@ -163,6 +163,18 @@ contextBridge.exposeInMainWorld('jewbot', {
     ipcRenderer.on('jewbot:cascadeEvent', listener);
     return () => ipcRenderer.removeListener('jewbot:cascadeEvent', listener);
   },
+  modulesList: () =>
+    ipcRenderer.invoke('jewbot:modules') as Promise<
+      Array<{
+        id: string;
+        title: string;
+        description: string;
+        version: string;
+        capabilities: string[];
+        health: 'ok' | 'down';
+        detail?: string;
+      }>
+    >,
 });
 
 export {};

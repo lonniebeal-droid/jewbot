@@ -123,6 +123,17 @@ declare global {
       cascadeStop: () => Promise<{ runState?: string }>;
       cascadeRequeue: (id: string) => Promise<{ ok: boolean; reason?: string }>;
       cascadeRemove: (id: string) => Promise<{ ok: boolean; reason?: string }>;
+      modulesList: () => Promise<
+        Array<{
+          id: string;
+          title: string;
+          description: string;
+          version: string;
+          capabilities: string[];
+          health: 'ok' | 'down';
+          detail?: string;
+        }>
+      >;
       onCascadeEvent: (cb: (snap: {
         runState: string;
         error: string | null;

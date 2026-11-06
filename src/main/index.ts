@@ -20,6 +20,7 @@ import { ContextIndexer } from '../modules/context';
 import { AgentLoop, AgentStreamEvent, DestructiveConfirmRequest, EditConfirmRequest } from '../modules/agent';
 import { CascadeAgentOutcome, CascadeRunner, CascadeTask } from '../modules/cascade';
 import { assertLocalSpendOnly, defaultSafetyConfig, issueConfirmation, SafetyDecision } from '../modules/safety';
+import { bootModules, listModuleHealth, shutdownModules } from '../modules/plugin';
 
 let mainWindow: BrowserWindow | null = null;
 let projectRoot = resolveInitialRoot();
@@ -123,10 +124,10 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
     }
     const report = (await win.webContents.executeJavaScript(`
       (async () => {
-        const ids = ['milestone','goal','send','stop','transcript','status','openProject','modeAgent','modeChat','projectRoot','termCommand','termRun','termKill','termOut','confirmModal','confirmYes','confirmNo','confirmCommand','confirmBlurb','sshHost','sshConnect','sshDisconnect','sshHosts','sshSessions','sshOut','sshCommand','sshRun','sshKill','sshState','sshHostModal','sshHostYes','sshHostNo','sshHostFingerprint','sshSecretModal','sshSecretInput','sshSecretOk','cascadeList','cascadeState','cascadeStart','cascadePause','cascadeStop','cascadeTitle','cascadePrompt','cascadeAccept','cascadeAdd'];
+        const ids = ['milestone','goal','send','stop','transcript','status','openProject','modeAgent','modeChat','projectRoot','termCommand','termRun','termKill','termOut','confirmModal','confirmYes','confirmNo','confirmCommand','confirmBlurb','sshHost','sshConnect','sshDisconnect','sshHosts','sshSessions','sshOut','sshCommand','sshRun','sshKill','sshState','sshHostModal','sshHostYes','sshHostNo','sshHostFingerprint','sshSecretModal','sshSecretInput','sshSecretOk','cascadeList','cascadeState','cascadeStart','cascadePause','cascadeStop','cascadeTitle','cascadePrompt','cascadeAccept','cascadeAdd','modulesList','modulesState'];
         const missing = ids.filter((id) => !document.getElementById(id));
         const bridge = window.jewbot || {};
-        const hasBridge = ['status','startAgent','startChat','cancelStream','onStreamEvent','pickProjectRoot','terminalStart','terminalConfirm','terminalKill','confirmReply','onTerminalEvent','editReply','editUndo','sshList','sshConnect','sshDisconnect','sshExec','sshConfirm','sshKill','sshHostKeyReply','sshSecretReply','onSshEvent','cascadeList','cascadeAdd','cascadeStart','cascadePause','cascadeStop','cascadeRequeue','cascadeRemove','onCascadeEvent'].every((k) => typeof bridge[k] === 'function');
+        const hasBridge = ['status','startAgent','startChat','cancelStream','onStreamEvent','pickProjectRoot','terminalStart','terminalConfirm','terminalKill','confirmReply','onTerminalEvent','editReply','editUndo','sshList','sshConnect','sshDisconnect','sshExec','sshConfirm','sshKill','sshHostKeyReply','sshSecretReply','onSshEvent','cascadeList','cascadeAdd','cascadeStart','cascadePause','cascadeStop','cascadeRequeue','cascadeRemove','onCascadeEvent','modulesList'].every((k) => typeof bridge[k] === 'function');
         let status = null;
         let statusError = null;
         try { status = await window.jewbot.status(); }
@@ -203,6 +204,13 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
         const blocked = await window.jewbot.terminalStart({ command: 'rm -rf /tmp/jewbot-ui-m2-nope' });
         document.getElementById('refresh').click();
         const sshHasPi = await waitFor(() => document.getElementById('sshHosts').innerText.indexOf('pi') >= 0, 4000);
+        const modulesReady = await waitFor(() => {
+          const row = document.querySelector('#modulesList [data-module="muse"]');
+          const echo = document.querySelector('#modulesList [data-module="echo"]');
+          const health = row && row.dataset.health;
+          return !!(row && echo && (health === 'ok' || health === 'down'));
+        }, 8000);
+        const moduleCount = document.querySelectorAll('#modulesList [data-module]').length;
         document.getElementById('sshHost').value = 'pi';
         document.getElementById('sshConnect').click();
         const sshSecretShown = await waitFor(() => document.getElementById('sshSecretModal').hidden === false, 4000);
@@ -302,6 +310,8 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
           cascadeStopped,
           cascadeAdded: cascadeAdded.every(Boolean),
           cascadeAdvanced,
+          modulesReady,
+          moduleCount,
         };
       })()
     `)) as {
@@ -345,6 +355,8 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
       cascadeStopped: boolean;
       cascadeAdded: boolean;
       cascadeAdvanced: boolean;
+      modulesReady: boolean;
+      moduleCount: number;
     };
     let knownBody = '';
     try {
@@ -358,7 +370,7 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
     const ok =
       report.hasBridge &&
       report.missing.length === 0 &&
-      report.milestone === 'M6' &&
+      report.milestone === 'M8' &&
       !!report.projectRoot &&
       report.sendEnabled &&
       report.streamed &&
@@ -396,6 +408,8 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
       report.cascadeStopped &&
       report.cascadeAdded &&
       report.cascadeAdvanced &&
+      report.modulesReady &&
+      report.moduleCount >= 15 &&
       editSmokeFilesOk() &&
       (report.ollamaOk || report.transcript.includes('Cannot reach Ollama'));
     console.log(`UI_SMOKE ${JSON.stringify(report)}`);
@@ -423,11 +437,18 @@ function finish(requestId: string): void {
   inflight.delete(requestId);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   if (process.env.JEWBOT_UI_SMOKE === '1') prepareUiSmokeSsh();
+  try {
+    await bootModules();
+  } catch (err) {
+    console.warn(`module boot: ${err instanceof Error ? err.message : String(err)}`);
+  }
   bindSshEvents();
   bindCascadeEvents();
   createWindow();
+
+  ipcMain.handle('jewbot:modules', async () => listModuleHealth());
 
   ipcMain.handle('jewbot:status', async () => {
     const cfg = defaultOllamaConfig();
@@ -435,7 +456,7 @@ app.whenReady().then(() => {
     const probe = await probeOllama(cfg);
     return {
       version: app.getVersion(),
-      milestone: 'M6',
+      milestone: 'M8',
       cascade: cascade.snapshot(),
       projectRoot,
       allowPaidApis: safety.allowPaidApis,
@@ -874,6 +895,7 @@ app.on('window-all-closed', () => {
   pendingEdits.clear();
   defaultTerminal.killAll();
   cascade.stop();
+  void shutdownModules();
   defaultSshManager.closeAll();
   for (const finish of pendingHostKeys.values()) finish(false);
   pendingHostKeys.clear();
