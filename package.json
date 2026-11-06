@@ -25,8 +25,9 @@
     "test:m6": "npx --yes tsx scripts/smoke-m6.ts",
     "test:muse": "npx --yes tsx scripts/smoke-muse.ts",
     "test:m8": "npx --yes tsx scripts/smoke-m8.ts",
+    "test:fleet": "npx --yes tsx scripts/smoke-fleet.ts",
     "test:ui": "npm run build && JEWBOT_UI_SMOKE=1 electron . --no-sandbox --disable-gpu",
-    "test": "npm run test:safety && npm run test:m1 && npm run test:m2 && npm run test:m3 && npm run test:m4 && npm run test:m5 && npm run test:m6 && npm run test:muse && npm run test:m8"
+    "test": "npm run test:safety && npm run test:m1 && npm run test:m2 && npm run test:m3 && npm run test:m4 && npm run test:m5 && npm run test:m6 && npm run test:muse && npm run test:m8 && npm run test:fleet"
   },
   "engines": {
     "node": ">=20"
