@@ -144,7 +144,8 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 | **M4** | Context indexer (.gitignore-aware) (**done**) |
 | **M5** | SSH sessions + remote exec (**done**) |
 | **M6** | Cascade runner wired to milestones (**done**) |
-| **M7** | Polish UI + packaging |
+| **M7** | Unsigned desktop packages for macOS, Windows, and Linux (x64 and arm64). Signing and notarization off (**done**) |
+| **M8** | Route across the owner's LAN Ollama hosts (Mac, Dell, Pi) with a health check per host (proposed) |
 
 ## Security notes
 

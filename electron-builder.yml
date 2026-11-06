@@ -1,0 +1,87 @@
+# Unsigned installers for Jewbot. Code signing and notarization are off.
+# They cost money and stay an owner decision. Do not set CSC_LINK, APPLE_ID,
+# or an Apple API key in CI. scripts/dist.js also forces discovery off.
+appId: com.github.lonniebealdroid.jewbot
+productName: Jewbot
+copyright: Copyright © 2026 lonniebeal-droid
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+# Keep in step with the electron version in package-lock.json (devDependency ^35).
+electronVersion: 35.7.5
+
+directories:
+  output: release
+  buildResources: build
+
+# Production deps (including optional node-pty and ssh2's cpu-features) are
+# collected automatically. TypeScript sources and docs stay out of the package.
+files:
+  - dist/**/*
+  - package.json
+  - LICENSE
+  - "!dist/**/*.map"
+  - "!dist/**/*.d.ts"
+  - "!**/*.ts"
+  - "!src/**"
+  - "!scripts/**"
+  - "!docs/**"
+  - "!release/**"
+  # See scripts/dist.js. Shipping this addon crashes or fails to load under Electron.
+  - "!**/sshcrypto.node"
+
+asar: true
+asarUnpack:
+  - "**/*.node"
+
+# Rebuild native addons for the Electron ABI (node-pty, cpu-features).
+npmRebuild: true
+forceCodeSigning: false
+
+# Never upload. Tag builds create a draft GitHub Release from Actions instead.
+publish: null
+
+mac:
+  category: public.app-category.developer-tools
+  # null skips signing entirely (no ad-hoc signature either).
+  identity: null
+  notarize: false
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+
+linux:
+  maintainer: lonniebeal-droid <lonniebeal-droid@users.noreply.github.com>
+  category: Development
+  executableName: jewbot
+  syncDesktopName: true
+  synopsis: Local-first coding agent ($0, Ollama)
+  target:
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+    - target: deb
+      arch:
+        - x64
+        - arm64
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # Embed version metadata. Signing is skipped because no certificate is configured.
+  signAndEditExecutable: true
+  verifyUpdateCodeSignature: false
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false

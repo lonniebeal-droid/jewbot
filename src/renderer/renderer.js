@@ -175,11 +175,38 @@ function askConfirm(command, reason, category) {
   return next;
 }
 
+function fillAbout(s) {
+  const version = (s && s.version) || '0.1.0';
+  const milestone = (s && s.milestone) || 'M7';
+  document.getElementById('version').textContent = 'v' + version;
+  document.getElementById('milestone').textContent = milestone;
+  const lines = [
+    'Jewbot ' + version,
+    'Milestone ' + milestone,
+    'Electron ' + ((s && s.electron) || 'unknown'),
+    'Platform: ' + ((s && s.platform) || 'unknown') + ' ' + ((s && s.arch) || ''),
+    'Code signing: ' + ((s && s.signing) || 'off') + ' (unsigned)',
+    'Notarization: ' + ((s && s.notarization) || 'off'),
+    'Signing and notarization cost money and stay an owner decision.',
+    s && s.allowPaidApis ? 'Spend: paid APIs enabled' : 'Spend: $0 · local Ollama only',
+  ];
+  document.getElementById('aboutBody').textContent = lines.join('\n');
+}
+
+function openAbout() {
+  document.getElementById('aboutModal').hidden = false;
+  document.getElementById('aboutClose').focus();
+}
+
+function closeAbout() {
+  document.getElementById('aboutModal').hidden = true;
+}
+
 async function refresh() {
   const statusEl = document.getElementById('status');
   try {
     const s = await window.jewbot.status();
-    document.getElementById('milestone').textContent = s.milestone || 'M6';
+    fillAbout(s);
     const root = s.projectRoot || '';
     const rootEl = document.getElementById('projectRoot');
     rootEl.textContent = root;
@@ -188,6 +215,7 @@ async function refresh() {
     const host = (s.ollama && s.ollama.host) || '';
     document.getElementById('spend').textContent = s.allowPaidApis ? 'Paid APIs enabled' : '$0 · local Ollama only';
     const lines = [
+      'Version: ' + ((s.version) || '0.1.0') + ' · ' + (s.milestone || 'M7') + ' · unsigned',
       s.ollamaOk ? 'Ollama: reachable' : 'Ollama: not reachable',
       'Host: ' + host,
       'Model: ' + model,
@@ -996,6 +1024,13 @@ if (window.jewbot && window.jewbot.onStreamEvent) {
   document.getElementById('cascadeAdd').onclick = () => {
     void addCascadeTask();
   };
+  document.getElementById('aboutOpen').onclick = () => openAbout();
+  document.getElementById('aboutClose').onclick = () => closeAbout();
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && document.getElementById('aboutModal').hidden === false) {
+      closeAbout();
+    }
+  });
   refresh();
 } else {
   document.getElementById('status').textContent = 'Open this UI from the Electron app (npm start).';

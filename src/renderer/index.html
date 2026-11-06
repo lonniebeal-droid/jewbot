@@ -83,7 +83,9 @@
 <body>
   <header>
     <h1>JEWBOT</h1>
-    <span class="badge" id="milestone">M6</span>
+    <span class="badge" id="milestone">M7</span>
+    <span class="badge" id="version">v0.1.0</span>
+    <button class="secondary" id="aboutOpen" type="button">About</button>
     <span class="muted" id="spend">$0 · Ollama</span>
     <span class="root" id="projectRoot" title="">…</span>
     <button class="secondary" id="openProject" type="button">Open project</button>
@@ -164,6 +166,20 @@
       </div>
     </div>
   </main>
+  <div id="aboutModal" class="modal" hidden>
+    <div class="dialog neutral" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+      <h3 id="aboutTitle">About Jewbot</h3>
+      <pre id="aboutBody">Jewbot 0.1.0
+Milestone M7
+Code signing: off (unsigned)
+Notarization: off
+Signing and notarization cost money and stay an owner decision.
+Spend: $0 · local Ollama only</pre>
+      <div class="row">
+        <button class="secondary" id="aboutClose" type="button">Close</button>
+      </div>
+    </div>
+  </div>
   <div id="confirmModal" class="modal" hidden>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
       <h3 id="confirmTitle">Confirm destructive command</h3>

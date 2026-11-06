@@ -86,9 +86,33 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
     },
-    title: 'Jewbot',
+    title: `Jewbot ${app.getVersion()}`,
   });
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+
+  if (process.env.JEWBOT_LAUNCH_SMOKE === '1' && process.env.JEWBOT_UI_SMOKE !== '1') {
+    let finished = false;
+    const timer = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      console.error('JEWBOT_LAUNCH_FAIL timeout waiting for the window');
+      app.exit(1);
+    }, 30000);
+    mainWindow.webContents.on('did-finish-load', () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      console.log(`JEWBOT_LAUNCH_OK ${app.getVersion()} ${process.platform} ${process.arch}`);
+      app.exit(0);
+    });
+    mainWindow.webContents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
+      if (!isMainFrame || finished) return;
+      finished = true;
+      clearTimeout(timer);
+      console.error(`JEWBOT_LAUNCH_FAIL ${code} ${description}`);
+      app.exit(1);
+    });
+  }
 
   if (process.env.JEWBOT_UI_SMOKE === '1') {
     mainWindow.webContents.on('did-finish-load', () => {
@@ -123,7 +147,7 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
     }
     const report = (await win.webContents.executeJavaScript(`
       (async () => {
-        const ids = ['milestone','goal','send','stop','transcript','status','openProject','modeAgent','modeChat','projectRoot','termCommand','termRun','termKill','termOut','confirmModal','confirmYes','confirmNo','confirmCommand','confirmBlurb','sshHost','sshConnect','sshDisconnect','sshHosts','sshSessions','sshOut','sshCommand','sshRun','sshKill','sshState','sshHostModal','sshHostYes','sshHostNo','sshHostFingerprint','sshSecretModal','sshSecretInput','sshSecretOk','cascadeList','cascadeState','cascadeStart','cascadePause','cascadeStop','cascadeTitle','cascadePrompt','cascadeAccept','cascadeAdd'];
+        const ids = ['milestone','version','aboutOpen','aboutModal','aboutBody','aboutClose','goal','send','stop','transcript','status','openProject','modeAgent','modeChat','projectRoot','termCommand','termRun','termKill','termOut','confirmModal','confirmYes','confirmNo','confirmCommand','confirmBlurb','sshHost','sshConnect','sshDisconnect','sshHosts','sshSessions','sshOut','sshCommand','sshRun','sshKill','sshState','sshHostModal','sshHostYes','sshHostNo','sshHostFingerprint','sshSecretModal','sshSecretInput','sshSecretOk','cascadeList','cascadeState','cascadeStart','cascadePause','cascadeStop','cascadeTitle','cascadePrompt','cascadeAccept','cascadeAdd'];
         const missing = ids.filter((id) => !document.getElementById(id));
         const bridge = window.jewbot || {};
         const hasBridge = ['status','startAgent','startChat','cancelStream','onStreamEvent','pickProjectRoot','terminalStart','terminalConfirm','terminalKill','confirmReply','onTerminalEvent','editReply','editUndo','sshList','sshConnect','sshDisconnect','sshExec','sshConfirm','sshKill','sshHostKeyReply','sshSecretReply','onSshEvent','cascadeList','cascadeAdd','cascadeStart','cascadePause','cascadeStop','cascadeRequeue','cascadeRemove','onCascadeEvent'].every((k) => typeof bridge[k] === 'function');
@@ -265,6 +289,8 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
           missing,
           hasBridge,
           milestone: status && status.milestone,
+          version: status && status.version,
+          aboutText: document.getElementById('aboutBody').textContent,
           projectRoot: status && status.projectRoot,
           ollamaOk: status && status.ollamaOk,
           statusError,
@@ -308,6 +334,8 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
       missing: string[];
       hasBridge: boolean;
       milestone?: string;
+      version?: string;
+      aboutText?: string;
       projectRoot?: string;
       ollamaOk?: boolean;
       statusError: string | null;
@@ -358,7 +386,10 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
     const ok =
       report.hasBridge &&
       report.missing.length === 0 &&
-      report.milestone === 'M6' &&
+      report.milestone === 'M7' &&
+      report.version === '0.1.0' &&
+      (report.aboutText || '').includes('0.1.0') &&
+      (report.aboutText || '').includes('unsigned') &&
       !!report.projectRoot &&
       report.sendEnabled &&
       report.streamed &&
@@ -423,7 +454,51 @@ function finish(requestId: string): void {
   inflight.delete(requestId);
 }
 
+function sshCryptoLine(): string {
+  try {
+    require('ssh2/lib/protocol/crypto/build/Release/sshcrypto.node');
+    return 'sshcrypto: loaded';
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes('Cannot find module')) {
+      return 'sshcrypto: js-fallback';
+    }
+    return `sshcrypto: FAIL ${message}`;
+  }
+}
+
+function nativeModuleLine(label: string, load: () => void): string {
+  try {
+    load();
+    return `${label}: loaded`;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return `${label}: FAIL ${message}`;
+  }
+}
+
 app.whenReady().then(() => {
+  if (process.argv.includes('--jewbot-version')) {
+    const lines = [
+      `jewbot ${app.getVersion()}`,
+      'milestone M7',
+      `electron ${process.versions.electron}`,
+      `platform ${process.platform} ${process.arch}`,
+      'signing off',
+      'notarization off',
+      nativeModuleLine('node-pty', () => {
+        require('node-pty');
+      }),
+      nativeModuleLine('cpu-features', () => {
+        require('cpu-features');
+      }),
+      sshCryptoLine(),
+    ];
+    console.log(lines.join('\n'));
+    app.exit(lines.some((line) => line.includes(': FAIL')) ? 1 : 0);
+    return;
+  }
+
   if (process.env.JEWBOT_UI_SMOKE === '1') prepareUiSmokeSsh();
   bindSshEvents();
   bindCascadeEvents();
@@ -435,7 +510,12 @@ app.whenReady().then(() => {
     const probe = await probeOllama(cfg);
     return {
       version: app.getVersion(),
-      milestone: 'M6',
+      milestone: 'M7',
+      electron: process.versions.electron,
+      platform: process.platform,
+      arch: process.arch,
+      signing: 'off',
+      notarization: 'off',
       cascade: cascade.snapshot(),
       projectRoot,
       allowPaidApis: safety.allowPaidApis,
