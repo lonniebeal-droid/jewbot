@@ -46,6 +46,8 @@ Built-ins that auto-register: `llm`, `agent`, `terminal`, `ssh`, `files`, `casca
 
 `muse` is the finisher merged in PR #8 (`src/modules/muse/index.ts`, `fleet.ts`, `checklist.ts`). The hub only adds `manifest.ts`. It does not replace that module with a stub.
 
+`music-release` is a real local checklist (`src/modules/music-release`). Its queue is `.jewbot/music-release.json`. Drafts use `assertLocalSpendOnly` and `chatOnce`. See `docs/migrations/music-release.md`.
+
 ## `jewbot.module.json`
 
 ```json
