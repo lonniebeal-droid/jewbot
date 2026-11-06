@@ -149,6 +149,10 @@ A task left `running` because the app quit is put back to `pending` the next tim
 
 Limits, overridable from the environment: 8 steps per task and 3 minutes of wall time. Paid or non-local model hosts stay refused unless `JEWBOT_ALLOW_PAID=1`.
 
+### Muse finisher
+
+Muse keeps five release blockers (private authenticated model URL, live Gmail and Calendar OAuth, an authenticated end-to-end chat test, Supabase RLS isolation, and the 2026-10-16 production gate) and can ask the local model to restate them. **Muse runs on fleet Ollama only.** The default host is `http://127.0.0.1:11434`. `OLLAMA_HOST` is used only when that host is still local, and `JEWBOT_MODEL` picks the local model. A non-local host is refused even when `JEWBOT_ALLOW_PAID=1`. Muse does not store Gmail or Calendar OAuth tokens.
+
 ```text
 Title: Readme check
 Prompt: Read README.md and reply with FINAL and the one-line description.
@@ -180,7 +184,7 @@ npm run typecheck
 npm test
 ```
 
-`npm test` runs the safety smoke, `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn), `npm run test:m2` (destructive classification, a streamed `echo`, session kill, and `run_terminal` through the confirm gate), `npm run test:m3` (diff preview, Accept/Reject, undo, secret-path refusal, and jailed writes on a temp directory), `npm run test:m4` (gitignore-aware index, secret and symlink jail, `find_files` / `search_context`, and a scripted project-aware agent turn), `npm run test:m5` (mocked `ssh2`: allowlist refusal, TOFU, streamed exec, passphrase redaction, and `ssh_exec` through the same confirm gate), and `npm run test:m6` (mocked Ollama: cascade auto-advance, blocked-then-skip, acceptance pass/fail, stop, pause, wall time, the step cap, and the paid-host refusal). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, rejects one diff and accepts then undoes another, runs `echo` in the terminal panel, cancels a destructive confirm, connects a mocked SSH host (passphrase plus host-key trust) and cancels a remote destructive command, stops a cascade task and then auto-advances past a blocked one, and sends one live agent message (it errors cleanly when Ollama is not running).
+`npm test` runs the safety smoke, `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn), `npm run test:m2` (destructive classification, a streamed `echo`, session kill, and `run_terminal` through the confirm gate), `npm run test:m3` (diff preview, Accept/Reject, undo, secret-path refusal, and jailed writes on a temp directory), `npm run test:m4` (gitignore-aware index, secret and symlink jail, `find_files` / `search_context`, and a scripted project-aware agent turn), `npm run test:m5` (mocked `ssh2`: allowlist refusal, TOFU, streamed exec, passphrase redaction, and `ssh_exec` through the same confirm gate), `npm run test:m6` (mocked Ollama: cascade auto-advance, blocked-then-skip, acceptance pass/fail, stop, pause, wall time, the step cap, and the paid-host refusal), and `npm run test:muse` (five open release blockers, local fleet health and chat with mocked `fetch`, and a refused non-local host with zero fetches). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, rejects one diff and accepts then undoes another, runs `echo` in the terminal panel, cancels a destructive confirm, connects a mocked SSH host (passphrase plus host-key trust) and cancels a remote destructive command, stops a cascade task and then auto-advances past a blocked one, and sends one live agent message (it errors cleanly when Ollama is not running).
 
 ## Environment
 
@@ -205,6 +209,7 @@ npm test
 - File writes (`write_file`, `apply_edit`, `propose_edit`) stay in that jail, show a unified diff, and apply only after Accept. Secret paths need that confirm; ignored directories do not open
 - SSH reaches only hosts listed in the local hosts file. The first connection, and any host-key change, waits for you to confirm the fingerprint. Remote destructive commands use the same confirmation grant as the local terminal
 - Cascade runs only the local model, stops at a step that needs you, and will not approve that step itself. The queue and receipts stay in the project's `.jewbot/` directory
+- Muse runs on fleet Ollama only. It does not close release blockers on its own and it does not keep Gmail or Calendar OAuth tokens
 
 ## Reused from JU repos
 
