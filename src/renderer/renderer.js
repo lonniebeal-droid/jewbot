@@ -179,7 +179,7 @@ async function refresh() {
   const statusEl = document.getElementById('status');
   try {
     const s = await window.jewbot.status();
-    document.getElementById('milestone').textContent = s.milestone || 'M6';
+    document.getElementById('milestone').textContent = s.milestone || 'M8';
     const root = s.projectRoot || '';
     const rootEl = document.getElementById('projectRoot');
     rootEl.textContent = root;
@@ -208,8 +208,46 @@ async function refresh() {
     statusEl.textContent = lines.join('\n');
     if (window.jewbot.cascadeList) renderCascade(await window.jewbot.cascadeList());
     await refreshSsh();
+    await refreshModules();
   } catch (e) {
     statusEl.textContent = String(e);
+  }
+}
+
+async function refreshModules() {
+  const list = document.getElementById('modulesList');
+  const state = document.getElementById('modulesState');
+  if (!list || !state || !window.jewbot || !window.jewbot.modulesList) return;
+  try {
+    const mods = await window.jewbot.modulesList();
+    list.textContent = '';
+    const rows = mods || [];
+    state.textContent = rows.length ? rows.length + ' registered' : 'none';
+    if (!rows.length) {
+      const empty = document.createElement('li');
+      empty.className = 'muted';
+      empty.textContent = '(no modules)';
+      list.appendChild(empty);
+      return;
+    }
+    for (const mod of rows) {
+      const li = document.createElement('li');
+      li.className = 'modules-item';
+      li.dataset.module = mod.id;
+      li.dataset.health = mod.health === 'ok' ? 'ok' : 'down';
+      li.title = mod.description || '';
+      const name = document.createElement('span');
+      name.textContent = mod.title + ' (' + mod.id + ')';
+      const health = document.createElement('span');
+      health.className = mod.health === 'ok' ? 'ok' : 'bad';
+      health.textContent = mod.health === 'ok' ? 'ok' : 'down';
+      li.appendChild(name);
+      li.appendChild(health);
+      list.appendChild(li);
+    }
+  } catch (err) {
+    state.textContent = 'down';
+    list.textContent = String(err);
   }
 }
 

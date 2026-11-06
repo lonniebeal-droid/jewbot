@@ -133,6 +133,13 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 | Path jail | File ops limited to opened project root. |
 | Shell approval | Optional `approved` + `executionId` (ju-agent style) for high-risk commands. |
 
+### 10. Module hub (`src/modules/plugin`)
+
+- `JewbotModule` plus `registerModule`, `listModules`, `getModule`, `unregisterModule`.
+- Boot loads `src/modules/*/manifest.ts` (or `jewbot.module.json`) and registers built-ins, the real Muse finisher, and migration stubs.
+- Modules that chat call `moduleChat`, which uses `assertLocalSpendOnly` and `src/modules/llm/ollama.ts`. Paid hostnames, including Grok and xAI, need `JEWBOT_ALLOW_PAID=1`. Muse refuses non-local hosts even then.
+- The window lists each module as `ok` or `down`.
+
 ## Milestone roadmap
 
 | ID | Scope |
@@ -144,7 +151,8 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 | **M4** | Context indexer (.gitignore-aware) (**done**) |
 | **M5** | SSH sessions + remote exec (**done**) |
 | **M6** | Cascade runner wired to milestones (**done**) |
-| **M7** | Polish UI + packaging |
+| **M7** | Packaging / releases (open, separate) |
+| **M8** | Module loader / bot hub (**this PR**) |
 
 ## Security notes
 

@@ -57,6 +57,8 @@
     .cascade-item .st-blocked, .cascade-item .st-failed { color: #f85149; }
     .cascade-item .st-running { color: #79b8ff; }
     .cascade-item .st-pending { color: #8b949e; }
+    .modules-list { list-style: none; margin: 0; padding: 0; max-height: 168px; overflow: auto; }
+    .modules-item { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 3px 0; border-bottom: 1px solid #2a2f3a; }
     #cascadePrompt { min-height: 44px; margin-bottom: 6px; }
     #cascadeTitle, #cascadeAccept { margin-bottom: 6px; }
     .dialog.neutral { border-color: #30363d; }
@@ -83,7 +85,7 @@
 <body>
   <header>
     <h1>JEWBOT</h1>
-    <span class="badge" id="milestone">M6</span>
+    <span class="badge" id="milestone">M8</span>
     <span class="muted" id="spend">$0 · Ollama</span>
     <span class="root" id="projectRoot" title="">…</span>
     <button class="secondary" id="openProject" type="button">Open project</button>
@@ -111,6 +113,13 @@
           <button class="secondary" id="refresh" type="button">Refresh</button>
         </div>
         <pre id="status">Loading…</pre>
+      </div>
+      <div>
+        <div class="row">
+          <h3 style="margin:0">Modules</h3>
+          <span class="muted" id="modulesState">…</span>
+        </div>
+        <ul id="modulesList" class="modules-list"></ul>
       </div>
       <div class="term-block" id="cascadePanel">
         <div class="row">
