@@ -5,6 +5,10 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { AgentLoop } from '../src/modules/agent';
+import { jewbotModule as agentModule } from '../src/modules/agent/manifest';
+import { ContextIndexer } from '../src/modules/context';
+import { FileWorkspace } from '../src/modules/files';
 import * as modules from '../src/modules';
 import {
   addMusicRelease,
@@ -19,6 +23,8 @@ import {
   runMusicTool,
 } from '../src/modules/music-release';
 import { resetOllamaHealthCache } from '../src/modules/plugin/health';
+import { SshManager } from '../src/modules/ssh';
+import { TerminalSession } from '../src/modules/terminal';
 
 function expect(cond: boolean, msg: string) {
   if (!cond) throw new Error(msg);
@@ -369,6 +375,62 @@ async function testHealthPing() {
   }
 }
 
+async function testAgentTools() {
+  const original = globalThis.fetch;
+  const urls: string[] = [];
+  const root = tempStore();
+  const release = addMusicRelease(album, { storeRoot: root });
+  let step = 0;
+  const script = [
+    JSON.stringify({ tool: 'music_list_releases', args: {} }),
+    JSON.stringify({
+      tool: 'music_next_free',
+      args: { upload: true, draft: true, host: 'https://api.openai.com/v1', intent: 'distrokid' },
+    }),
+    JSON.stringify({
+      tool: 'music_mark',
+      args: { id: release.id, status: 'done', pay: true, intent: 'checkout the DistroKid plan' },
+    }),
+    'FINAL: still blocked',
+  ];
+  globalThis.fetch = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    urls.push(url);
+    expect(url === 'http://127.0.0.1:11434/api/chat', `agent url ${url}`);
+    const content = script[Math.min(step, script.length - 1)];
+    step += 1;
+    return new Response(ndjson(content), { status: 200 });
+  };
+  try {
+    const names = (agentModule.tools || []).map((tool) => tool.name);
+    expect(names.includes('music_list_releases') && names.includes('music_next_free') && names.includes('music_mark'), names.join());
+    const agent = new AgentLoop({
+      files: new FileWorkspace(root),
+      terminal: new TerminalSession(),
+      ssh: new SshManager({ autoload: false }),
+      context: new ContextIndexer(root),
+      llm: { host: 'http://127.0.0.1:11434', model: 'test-model', allowPaidApis: false },
+      maxSteps: 6,
+    });
+    let observations = '';
+    let final = '';
+    for await (const ev of agent.runStream('advance the weekly album')) {
+      if (ev.type === 'done') {
+        final = ev.result.finalText || '';
+        observations = ev.result.steps.map((item) => item.observation || '').join('\n');
+      }
+    }
+    expect(final === 'still blocked', `final ${final}`);
+    expect(observations.includes('JU Music') && observations.includes('Week 45'), observations);
+    expect(observations.includes('humanGate'), 'agent observation names the human gate');
+    expect(/distrokid/i.test(observations), observations);
+    expect(musicListReleases({ storeRoot: root })[0].status === 'blocked', 'pay intent from the agent stays blocked');
+    expect(urls.every((url) => url === 'http://127.0.0.1:11434/api/chat'), `urls ${urls.join(',')}`);
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
 function testSourcesStayLocal() {
   const dir = path.join(__dirname, '../src/modules/music-release');
   const banned = ['distrokid.com', 'spotify.com', 'api.spotify.com', 'openai.com', 'api.x.ai', 'stripe.com'];
@@ -392,6 +454,7 @@ async function main() {
   await testRefusesPaidDraft();
   await testToolGate();
   await testHealthPing();
+  await testAgentTools();
   console.log('smoke-music: PASS');
 }
 
