@@ -6,3 +6,4 @@ export * as files from './files';
 export * as cascade from './cascade';
 export * as safety from './safety';
 export * as context from './context';
+export * as muse from './muse';
