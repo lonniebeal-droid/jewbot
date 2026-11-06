@@ -139,6 +139,7 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 - Boot loads `src/modules/*/manifest.ts` (or `jewbot.module.json`) and registers built-ins, the real Muse finisher, and migration stubs.
 - Modules that chat call `moduleChat`, which uses `assertLocalSpendOnly` and `src/modules/llm/ollama.ts`. Paid hostnames, including Grok and xAI, need `JEWBOT_ALLOW_PAID=1`. Muse refuses non-local hosts even then.
 - The window lists each module as `ok` or `down`.
+- `music-release` is a real local checklist for the JU Music weekly album pipeline (`.jewbot/music-release.json`). DistroKid, store login, and payment stay a human gate. The other migration stubs remain health-only.
 
 ## Milestone roadmap
 
