@@ -7,6 +7,7 @@
 import { chatStream, ChatMessage, defaultOllamaConfig, OllamaConfig } from '../llm';
 import { DiffPreview, EditSpec, FileWorkspace, SecretPathError } from '../files';
 import { formatTerminalObservation, TerminalResult, TerminalSession } from '../terminal';
+import { checkFleet, formatFleetHealth, formatFleetList, listFleet } from '../fleet-triage';
 import { formatSshObservation, HostKeyPrompt, SecretPrompt, SshExecResult, SshManager } from '../ssh';
 import { ContextIndexer, formatFindResult, formatSearchResult } from '../context';
 import { checkShellCommand, issueConfirmation } from '../safety';
@@ -119,6 +120,9 @@ Live tools (paths stay inside the project root; the shell cwd is the project roo
 - ssh_connect {"tool":"ssh_connect","args":{"host":"pi"}}
 - ssh_exec {"tool":"ssh_exec","args":{"host":"pi","command":"uname -a"}}
 - ssh_disconnect {"tool":"ssh_disconnect","args":{"host":"pi"}}
+- fleet_list {"tool":"fleet_list","args":{}}
+- fleet_health {"tool":"fleet_health","args":{}}
+- fleet_health {"tool":"fleet_health","args":{"host":"pi"}}
 
 The user message starts with a compact project tree and, when the goal names a file or symbol, a few excerpts. That is not the whole repo. Secret files are not in the index. Use find_files and search_context before guessing paths.
 Put the JSON object on its own line. One tool per turn.
@@ -126,6 +130,7 @@ write_file, propose_edit, and apply_edit show a unified diff and do not change t
 Secret paths (.env, private keys) are refused until the owner confirms. Do not expect their existing contents in OBSERVE.
 run_terminal streams stdout and stderr back as OBSERVE. You cannot approve your own command.
 ssh_list_hosts shows configured hosts only. ssh_connect opens one of those hosts. The first connection asks the owner to confirm the host key fingerprint. ssh_exec streams remote stdout and stderr and uses the same destructive-command gate as the local terminal. You cannot approve your own remote command, and you cannot connect to a host that is not configured.
+fleet_list reads ~/.jewbot/fleet.json when that file exists, otherwise localhost plus every host in ~/.jewbot/hosts.json. fleet_health pings local Ollama /api/tags and runs curl -s http://127.0.0.1:11434/api/tags on each allowlisted SSH host. It ignores command, approved, and executionId. Destructive remote commands still need the owner gate, and fleet_health does not send them.
 Destructive commands (rm -rf, git push --force, mkfs, dd of=, chmod -R 777 /, and similar) do not run until the owner confirms in the UI. If OBSERVE says BLOCKED, the command did not run — do not claim it did.
 ask_owner pauses for a human. Do not claim a tool ran unless you emitted its JSON.`;
 
@@ -300,10 +305,14 @@ export class AgentLoop {
           return this.observeSshDisconnect(tool);
         case 'ssh_exec':
           return 'ERROR: ssh_exec did not pass the safety gate, so it was not executed.';
+        case 'fleet_list':
+          return formatFleetList(listFleet({ ssh: this.deps.ssh }));
+        case 'fleet_health':
+          return await this.observeFleetHealth(tool, signal);
         case 'ask_owner':
           return String(tool.args.question ?? 'Owner input required');
         default:
-          return `Unknown tool: ${tool.name}. Live tools: get_project_summary, find_files, search_context, list_dir, read_file, write_file, apply_edit, propose_edit, run_terminal, ssh_list_hosts, ssh_connect, ssh_exec, ssh_disconnect.`;
+          return `Unknown tool: ${tool.name}. Live tools: get_project_summary, find_files, search_context, list_dir, read_file, write_file, apply_edit, propose_edit, run_terminal, ssh_list_hosts, ssh_connect, ssh_exec, ssh_disconnect, fleet_list, fleet_health.`;
       }
     } catch (err) {
       return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
@@ -492,6 +501,20 @@ export class AgentLoop {
     const result = finished;
     if (!result) return 'ERROR: terminal produced no result';
     return formatTerminalObservation(result);
+  }
+
+  private async observeFleetHealth(tool: AgentToolCall, signal?: AbortSignal): Promise<string> {
+    const requested = typeof tool.args.host === 'string' ? tool.args.host : undefined;
+    const report = await checkFleet(
+      {
+        ssh: this.deps.ssh,
+        confirmHostKey: this.deps.confirmHostKey,
+        promptSshSecret: this.deps.promptSshSecret,
+        signal,
+      },
+      requested ? { host: requested } : undefined,
+    );
+    return formatFleetHealth(report);
   }
 
   private observeSshHosts(): string {

@@ -7,4 +7,5 @@ export * as cascade from './cascade';
 export * as safety from './safety';
 export * as context from './context';
 export * as muse from './muse';
+export * as fleetTriage from './fleet-triage';
 export * as plugin from './plugin';

@@ -15,6 +15,8 @@ export const jewbotModule = builtinModule({
     { name: 'write_file', description: 'Propose a file edit. Apply waits for Accept.' },
     { name: 'run_terminal', description: 'Run a local command. Destructive commands wait for confirmation.' },
     { name: 'ssh_exec', description: 'Run a command on an allowlisted SSH host.' },
+    { name: 'fleet_list', description: 'List local and allowlisted fleet hosts. No secrets.' },
+    { name: 'fleet_health', description: 'Ping local Ollama and curl tags on allowlisted SSH hosts.' },
     { name: 'ask_owner', description: 'Pause for the owner. The model cannot approve this itself.' },
   ],
 });
