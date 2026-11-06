@@ -58,7 +58,13 @@ declare global {
   interface Window {
     jewbot: {
       status: () => Promise<{
+        version?: string;
         milestone?: string;
+        electron?: string;
+        platform?: string;
+        arch?: string;
+        signing?: string;
+        notarization?: string;
         projectRoot?: string;
         hosts?: Array<{ name: string; host?: string; port?: number; username?: string; auth?: string }>;
         ollama?: { host?: string; model?: string };

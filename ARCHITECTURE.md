@@ -151,8 +151,8 @@ Patterns reused from **ju-agent**: explicit approval flags, execution IDs, bound
 | **M4** | Context indexer (.gitignore-aware) (**done**) |
 | **M5** | SSH sessions + remote exec (**done**) |
 | **M6** | Cascade runner wired to milestones (**done**) |
-| **M7** | Packaging / releases (open, separate) |
-| **M8** | Module loader / bot hub (**this PR**) |
+| **M7** | Unsigned desktop packages for macOS, Windows, and Linux (x64 and arm64). Signing and notarization off (**this PR**) |
+| **M8** | Module loader / bot hub (**done**) |
 
 ## Security notes
 

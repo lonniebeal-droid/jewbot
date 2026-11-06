@@ -1,0 +1,137 @@
+# Public-repo Actions minutes only. No paid runners, no third-party publish,
+# and no repository secrets. GITHUB_TOKEN is the automatic workflow token.
+#
+# pull_request: typecheck + unit smokes.
+# tag push v*: build unsigned installers and attach them to a draft release.
+# The draft is not published.
+
+name: Build
+
+on:
+  pull_request:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    name: Typecheck and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Test
+        run: npm test
+
+  package:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    name: Package (${{ matrix.platform }} ${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ubuntu, macos, windows — one job per installer arch, all standard
+          # hosted runners (free on a public repository, including arm64).
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            script: dist:linux
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            script: dist:linux
+          - os: macos-latest
+            platform: mac
+            arch: arm64
+            script: dist:mac
+          - os: macos-15-intel
+            platform: mac
+            arch: x64
+            script: dist:mac
+          - os: windows-latest
+            platform: win
+            arch: x64
+            script: dist:win
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build unsigned installers
+        run: npm run ${{ matrix.script }} -- --${{ matrix.arch }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jewbot-${{ matrix.platform }}-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+
+  draft-release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    name: Draft GitHub Release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Attach installers to a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find artifacts -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' -o -name '*.zip' -o -name '*.exe' \) | sort)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No installer files were downloaded."
+            exit 1
+          fi
+          tag="${GITHUB_REF_NAME}"
+          notes=$(printf '%s\n' \
+            "Unsigned installers for Jewbot ${tag}." \
+            "" \
+            "Code signing and Apple notarization are off. They cost money and are an owner decision. This workflow only creates a draft. It does not publish the release." \
+            "" \
+            "- macOS: dmg and zip, arm64 and x64. Gatekeeper will warn because the app is unsigned." \
+            "- Linux x64 (Dell): AppImage and deb." \
+            "- Linux arm64 (Raspberry Pi OS 64-bit): AppImage and deb. Install Ollama separately and use a small model such as qwen2.5-coder:1.5b." \
+            "- Windows x64: NSIS installer. SmartScreen will warn because the app is unsigned." \
+            "" \
+            "Ollama is not bundled. The default spend gate stays local-only.")
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            draft=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+            if [ "$draft" != "true" ]; then
+              echo "Release $tag is already published. Refusing to upload or publish."
+              exit 1
+            fi
+            gh release upload "$tag" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" "${files[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft \
+              --title "Jewbot ${tag}" \
+              --notes "$notes"
+          fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,tagName,url \
+            --jq '{tag:.tagName,draft:.isDraft,prerelease:.isPrerelease,url:.url}'
