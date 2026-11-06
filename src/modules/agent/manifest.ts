@@ -17,6 +17,9 @@ export const jewbotModule = builtinModule({
     { name: 'ssh_exec', description: 'Run a command on an allowlisted SSH host.' },
     { name: 'fleet_list', description: 'List local and allowlisted fleet hosts. No secrets.' },
     { name: 'fleet_health', description: 'Ping local Ollama and curl tags on allowlisted SSH hosts.' },
+    { name: 'portfolio_list_gates', description: 'List local portfolio production-readiness gates. No deploy.' },
+    { name: 'portfolio_next_free', description: 'Next open portfolio gate with no owner or human blocker.' },
+    { name: 'portfolio_mark_gate', description: 'Set one local portfolio gate status. Does not deploy.' },
     { name: 'ask_owner', description: 'Pause for the owner. The model cannot approve this itself.' },
   ],
 });

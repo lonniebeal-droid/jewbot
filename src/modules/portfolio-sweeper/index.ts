@@ -40,6 +40,25 @@ export function portfolioNextFree(root?: string): ReturnType<typeof nextFreeGate
   return nextFreeGate(root);
 }
 
+function formatGateLine(gate: { id: string; title: string; status: string; blocker: { kind: string; note: string } | null }): string {
+  const blocker = gate.blocker ? `${gate.blocker.kind}${gate.blocker.note ? `: ${gate.blocker.note}` : ''}` : 'none';
+  return `${gate.id} status=${gate.status} blocker=${blocker} title=${gate.title}`;
+}
+
+export function formatPortfolioList(source: GateSource): string {
+  const lines = source.gates.map(formatGateLine);
+  return [`source=${source.source}`, `path=${source.path}`, ...(lines.length ? lines : ['(no gates)'])].join('\n');
+}
+
+export function formatPortfolioNext(result: ReturnType<typeof nextFreeGate>): string {
+  if (!result.gate) return `source=${result.source}\npath=${result.path}\nnext=none`;
+  return `source=${result.source}\npath=${result.path}\nnext=${formatGateLine(result.gate)}`;
+}
+
+export function formatPortfolioMark(result: MarkGateResult): string {
+  return `deployed=false\npath=${result.path}\n${formatGateLine(result.gate)}`;
+}
+
 export function portfolioCallTool(
   name: string,
   args: Record<string, unknown> = {},

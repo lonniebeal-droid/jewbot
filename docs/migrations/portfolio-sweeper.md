@@ -18,6 +18,8 @@ A missing file is created from the bundled checklist only when a gate is marked.
 
 `health()` calls `assertLocalSpendOnly(false)` and then `probeOllama` in `src/modules/llm/ollama.ts` (`GET /api/tags`). A paid or non-local host is refused, including when `JEWBOT_ALLOW_PAID=1`. The gate file is not sent to the model. This module does not chat.
 
+The agent loop dispatches the same three tools inside the open project. `portfolio_mark_gate` reads only `id` and `status`. It ignores `command`, `approved`, `executionId`, `deploy`, and `root`. Marking a gate does not open a human confirm dialog and does not pause cascade.
+
 ## Bundled checklist
 
 Used when `.jewbot/portfolio-gates.json` is absent. The same gates are in `src/modules/portfolio-sweeper/checklist.ts`.
