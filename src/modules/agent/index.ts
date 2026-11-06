@@ -8,6 +8,14 @@ import { chatStream, ChatMessage, defaultOllamaConfig, OllamaConfig } from '../l
 import { DiffPreview, EditSpec, FileWorkspace, SecretPathError } from '../files';
 import { formatTerminalObservation, TerminalResult, TerminalSession } from '../terminal';
 import { checkFleet, formatFleetHealth, formatFleetList, listFleet } from '../fleet-triage';
+import {
+  formatPortfolioList,
+  formatPortfolioMark,
+  formatPortfolioNext,
+  portfolioListGates,
+  portfolioMarkGate,
+  portfolioNextFree,
+} from '../portfolio-sweeper';
 import { formatSshObservation, HostKeyPrompt, SecretPrompt, SshExecResult, SshManager } from '../ssh';
 import { ContextIndexer, formatFindResult, formatSearchResult } from '../context';
 import { checkShellCommand, issueConfirmation } from '../safety';
@@ -123,6 +131,9 @@ Live tools (paths stay inside the project root; the shell cwd is the project roo
 - fleet_list {"tool":"fleet_list","args":{}}
 - fleet_health {"tool":"fleet_health","args":{}}
 - fleet_health {"tool":"fleet_health","args":{"host":"pi"}}
+- portfolio_list_gates {"tool":"portfolio_list_gates","args":{}}
+- portfolio_next_free {"tool":"portfolio_next_free","args":{}}
+- portfolio_mark_gate {"tool":"portfolio_mark_gate","args":{"id":"local-change-report","status":"done"}}
 
 The user message starts with a compact project tree and, when the goal names a file or symbol, a few excerpts. That is not the whole repo. Secret files are not in the index. Use find_files and search_context before guessing paths.
 Put the JSON object on its own line. One tool per turn.
@@ -131,6 +142,7 @@ Secret paths (.env, private keys) are refused until the owner confirms. Do not e
 run_terminal streams stdout and stderr back as OBSERVE. You cannot approve your own command.
 ssh_list_hosts shows configured hosts only. ssh_connect opens one of those hosts. The first connection asks the owner to confirm the host key fingerprint. ssh_exec streams remote stdout and stderr and uses the same destructive-command gate as the local terminal. You cannot approve your own remote command, and you cannot connect to a host that is not configured.
 fleet_list reads ~/.jewbot/fleet.json when that file exists, otherwise localhost plus every host in ~/.jewbot/hosts.json. fleet_health pings local Ollama /api/tags and runs curl -s http://127.0.0.1:11434/api/tags on each allowlisted SSH host. It ignores command, approved, and executionId. Destructive remote commands still need the owner gate, and fleet_health does not send them.
+portfolio_list_gates and portfolio_next_free read .jewbot/portfolio-gates.json in the open project, or the bundled checklist when that file is missing. portfolio_next_free returns the next open gate that is not blocked by an owner or a human. portfolio_mark_gate sets one status (open, blocked, or done) in that file only. It ignores command, approved, executionId, deploy, and root. It does not deploy and it does not pause for a human gate.
 Destructive commands (rm -rf, git push --force, mkfs, dd of=, chmod -R 777 /, and similar) do not run until the owner confirms in the UI. If OBSERVE says BLOCKED, the command did not run — do not claim it did.
 ask_owner pauses for a human. Do not claim a tool ran unless you emitted its JSON.`;
 
@@ -309,10 +321,16 @@ export class AgentLoop {
           return formatFleetList(listFleet({ ssh: this.deps.ssh }));
         case 'fleet_health':
           return await this.observeFleetHealth(tool, signal);
+        case 'portfolio_list_gates':
+          return formatPortfolioList(portfolioListGates(this.deps.files.projectRoot));
+        case 'portfolio_next_free':
+          return formatPortfolioNext(portfolioNextFree(this.deps.files.projectRoot));
+        case 'portfolio_mark_gate':
+          return this.observePortfolioMark(tool);
         case 'ask_owner':
           return String(tool.args.question ?? 'Owner input required');
         default:
-          return `Unknown tool: ${tool.name}. Live tools: get_project_summary, find_files, search_context, list_dir, read_file, write_file, apply_edit, propose_edit, run_terminal, ssh_list_hosts, ssh_connect, ssh_exec, ssh_disconnect, fleet_list, fleet_health.`;
+          return `Unknown tool: ${tool.name}. Live tools: get_project_summary, find_files, search_context, list_dir, read_file, write_file, apply_edit, propose_edit, run_terminal, ssh_list_hosts, ssh_connect, ssh_exec, ssh_disconnect, fleet_list, fleet_health, portfolio_list_gates, portfolio_next_free, portfolio_mark_gate.`;
       }
     } catch (err) {
       return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
@@ -515,6 +533,19 @@ export class AgentLoop {
       requested ? { host: requested } : undefined,
     );
     return formatFleetHealth(report);
+  }
+
+  /**
+   * Status write inside the open project. Extra args (command, approved,
+   * executionId, deploy, root) are ignored. This does not ask the owner.
+   */
+  private observePortfolioMark(tool: AgentToolCall): string {
+    const id = tool.args.id;
+    const status = tool.args.status;
+    if (typeof id !== 'string' || typeof status !== 'string') {
+      return 'ERROR: portfolio_mark_gate needs string id and status. Status is open, blocked, or done. This does not deploy.';
+    }
+    return formatPortfolioMark(portfolioMarkGate(id, status, this.deps.files.projectRoot));
   }
 
   private observeSshHosts(): string {
