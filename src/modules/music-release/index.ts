@@ -92,6 +92,32 @@ export const jewbotModule: JewbotModule = {
   health: pingLocalOllama,
 };
 
+export function formatMusicRelease(release: MusicRelease): string {
+  const tracks = release.tracks.length
+    ? release.tracks.map((track) => (track.artist ? `${track.title} (${track.artist})` : track.title)).join(', ')
+    : '(no tracks)';
+  const parts = [
+    release.id,
+    release.status,
+    `step=${release.step}`,
+    `${release.artist} — ${release.title}`,
+    release.week ? `week=${release.week}` : '',
+    `tracks=${tracks}`,
+  ].filter((part) => part);
+  if (release.reason) parts.push(`reason=${release.reason}`);
+  return parts.join(' | ');
+}
+
+export function formatMusicList(releases: MusicRelease[]): string {
+  if (!releases.length) return 'No music releases in .jewbot/music-release.json.';
+  return releases.map(formatMusicRelease).join('\n');
+}
+
+export function formatMusicNext(next: MusicNextFreeResult): string {
+  const line = next.release ? formatMusicRelease(next.release) : 'No release selected.';
+  return `${next.action}${next.humanGate ? ' humanGate' : ''}: ${next.detail}\n${line}`;
+}
+
 export async function musicNextFree(options: MusicNextFreeOptions = {}): Promise<MusicNextFreeResult> {
   const storeRoot = options.storeRoot;
   const gate = humanGateFromFlags(options);

@@ -24,6 +24,8 @@ When the free steps are finished, or the caller asks to upload, log in, or pay, 
 
 `health()` is the shared local `/api/tags` ping.
 
+The agent loop exposes the same three names. A `host` argument on those calls is ignored, so the model cannot point a draft at a paid provider. `draft: true` still uses local Ollama only.
+
 `addMusicRelease()` appends one pending release. It is a local writer, not a fourth distributor tool.
 
 ## Queue schema

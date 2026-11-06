@@ -8,6 +8,15 @@ import { chatStream, ChatMessage, defaultOllamaConfig, OllamaConfig } from '../l
 import { DiffPreview, EditSpec, FileWorkspace, SecretPathError } from '../files';
 import { formatTerminalObservation, TerminalResult, TerminalSession } from '../terminal';
 import { checkFleet, formatFleetHealth, formatFleetList, listFleet } from '../fleet-triage';
+import {
+  formatMusicList,
+  formatMusicNext,
+  formatMusicRelease,
+  musicListReleases,
+  musicMark,
+  musicNextFree,
+  type MusicGateFlags,
+} from '../music-release';
 import { formatSshObservation, HostKeyPrompt, SecretPrompt, SshExecResult, SshManager } from '../ssh';
 import { ContextIndexer, formatFindResult, formatSearchResult } from '../context';
 import { checkShellCommand, issueConfirmation } from '../safety';
@@ -101,6 +110,16 @@ export interface AgentDeps {
 
 const OBSERVATION_MAX = 12_000;
 
+function musicFlags(args: Record<string, unknown>): MusicGateFlags {
+  return {
+    intent: typeof args.intent === 'string' ? args.intent : undefined,
+    upload: args.upload === true,
+    pay: args.pay === true,
+    login: args.login === true,
+    distribute: args.distribute === true,
+  };
+}
+
 const SYSTEM = `You are Jewbot, a local coding agent. $0 spend — Ollama only, no paid APIs.
 Loop: think briefly, ACT with exactly one tool, then you will receive OBSERVE.
 When the goal is satisfied, reply with a line starting with FINAL: and the answer. Do not invent file contents.
@@ -123,6 +142,10 @@ Live tools (paths stay inside the project root; the shell cwd is the project roo
 - fleet_list {"tool":"fleet_list","args":{}}
 - fleet_health {"tool":"fleet_health","args":{}}
 - fleet_health {"tool":"fleet_health","args":{"host":"pi"}}
+- music_list_releases {"tool":"music_list_releases","args":{}}
+- music_next_free {"tool":"music_next_free","args":{}}
+- music_next_free {"tool":"music_next_free","args":{"draft":true}}
+- music_mark {"tool":"music_mark","args":{"id":"rel_…","status":"done"}}
 
 The user message starts with a compact project tree and, when the goal names a file or symbol, a few excerpts. That is not the whole repo. Secret files are not in the index. Use find_files and search_context before guessing paths.
 Put the JSON object on its own line. One tool per turn.
@@ -131,6 +154,7 @@ Secret paths (.env, private keys) are refused until the owner confirms. Do not e
 run_terminal streams stdout and stderr back as OBSERVE. You cannot approve your own command.
 ssh_list_hosts shows configured hosts only. ssh_connect opens one of those hosts. The first connection asks the owner to confirm the host key fingerprint. ssh_exec streams remote stdout and stderr and uses the same destructive-command gate as the local terminal. You cannot approve your own remote command, and you cannot connect to a host that is not configured.
 fleet_list reads ~/.jewbot/fleet.json when that file exists, otherwise localhost plus every host in ~/.jewbot/hosts.json. fleet_health pings local Ollama /api/tags and runs curl -s http://127.0.0.1:11434/api/tags on each allowlisted SSH host. It ignores command, approved, and executionId. Destructive remote commands still need the owner gate, and fleet_health does not send them.
+music_list_releases, music_next_free, and music_mark use .jewbot/music-release.json in the open project. They do not upload, log in, or pay. An upload, login, or payment request marks the release blocked. draft:true may ask local Ollama for notes. A host argument is ignored. Notes text does not mark a release done.
 Destructive commands (rm -rf, git push --force, mkfs, dd of=, chmod -R 777 /, and similar) do not run until the owner confirms in the UI. If OBSERVE says BLOCKED, the command did not run — do not claim it did.
 ask_owner pauses for a human. Do not claim a tool ran unless you emitted its JSON.`;
 
@@ -309,10 +333,16 @@ export class AgentLoop {
           return formatFleetList(listFleet({ ssh: this.deps.ssh }));
         case 'fleet_health':
           return await this.observeFleetHealth(tool, signal);
+        case 'music_list_releases':
+          return formatMusicList(musicListReleases({ storeRoot: this.deps.files.projectRoot }));
+        case 'music_next_free':
+          return await this.observeMusicNext(tool);
+        case 'music_mark':
+          return this.observeMusicMark(tool);
         case 'ask_owner':
           return String(tool.args.question ?? 'Owner input required');
         default:
-          return `Unknown tool: ${tool.name}. Live tools: get_project_summary, find_files, search_context, list_dir, read_file, write_file, apply_edit, propose_edit, run_terminal, ssh_list_hosts, ssh_connect, ssh_exec, ssh_disconnect, fleet_list, fleet_health.`;
+          return `Unknown tool: ${tool.name}. Live tools: get_project_summary, find_files, search_context, list_dir, read_file, write_file, apply_edit, propose_edit, run_terminal, ssh_list_hosts, ssh_connect, ssh_exec, ssh_disconnect, fleet_list, fleet_health, music_list_releases, music_next_free, music_mark.`;
       }
     } catch (err) {
       return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
@@ -501,6 +531,41 @@ export class AgentLoop {
     const result = finished;
     if (!result) return 'ERROR: terminal produced no result';
     return formatTerminalObservation(result);
+  }
+
+  private async observeMusicNext(tool: AgentToolCall): Promise<string> {
+    try {
+      const next = await musicNextFree({
+        storeRoot: this.deps.files.projectRoot,
+        draft: tool.args.draft === true,
+        ...musicFlags(tool.args),
+      });
+      return formatMusicNext(next);
+    } catch (err) {
+      return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+
+  private observeMusicMark(tool: AgentToolCall): string {
+    const status = tool.args.status;
+    if (status !== 'pending' && status !== 'blocked' && status !== 'done') {
+      return 'ERROR: music_mark status must be pending, blocked, or done.';
+    }
+    try {
+      const release = musicMark(
+        {
+          id: typeof tool.args.id === 'string' ? tool.args.id : '',
+          status,
+          notes: typeof tool.args.notes === 'string' ? tool.args.notes : undefined,
+          reason: typeof tool.args.reason === 'string' ? tool.args.reason : undefined,
+          ...musicFlags(tool.args),
+        },
+        { storeRoot: this.deps.files.projectRoot },
+      );
+      return formatMusicRelease(release);
+    } catch (err) {
+      return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
+    }
   }
 
   private async observeFleetHealth(tool: AgentToolCall, signal?: AbortSignal): Promise<string> {

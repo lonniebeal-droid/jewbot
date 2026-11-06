@@ -17,6 +17,9 @@ export const jewbotModule = builtinModule({
     { name: 'ssh_exec', description: 'Run a command on an allowlisted SSH host.' },
     { name: 'fleet_list', description: 'List local and allowlisted fleet hosts. No secrets.' },
     { name: 'fleet_health', description: 'Ping local Ollama and curl tags on allowlisted SSH hosts.' },
+    { name: 'music_list_releases', description: 'Read the local weekly album checklist. No distributor call.' },
+    { name: 'music_next_free', description: 'Advance one free local music step. Upload, login, and payment stay blocked.' },
+    { name: 'music_mark', description: 'Mark a local music release pending, blocked, or done. Done does not upload or pay.' },
     { name: 'ask_owner', description: 'Pause for the owner. The model cannot approve this itself.' },
   ],
 });
