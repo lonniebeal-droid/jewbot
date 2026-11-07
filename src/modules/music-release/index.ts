@@ -51,6 +51,8 @@ export interface MusicNextFreeOptions extends MusicStoreOptions, MusicGateFlags 
   /** When true, empty notes are drafted on local Ollama. Default is off. */
   draft?: boolean;
   config?: Partial<OllamaConfig>;
+  /** Abort signal from the owner (Stop). Aborts the draft and blocks the save. */
+  signal?: AbortSignal;
 }
 
 export interface MusicNextFreeResult {
@@ -64,6 +66,7 @@ export interface MusicNextFreeResult {
 
 export interface MusicToolOptions extends MusicStoreOptions {
   config?: Partial<OllamaConfig>;
+  signal?: AbortSignal;
 }
 
 export const jewbotModule: JewbotModule = {
@@ -157,8 +160,43 @@ export async function musicNextFree(options: MusicNextFreeOptions = {}): Promise
         false,
       );
     }
+    // Snapshot the draft inputs before the async call so a newer owner edit
+    // made while Ollama is thinking is never overwritten by this draft.
+    const before = {
+      step: current.step,
+      notes: current.notes,
+      title: current.title,
+      artist: current.artist,
+      trackCount: current.tracks.length,
+    };
     try {
-      const notes = await draftReleaseNotes(current, options.config);
+      const notes = await draftReleaseNotes(current, options.config, options.signal);
+      if (options.signal?.aborted) {
+        return result(
+          current,
+          'waiting',
+          'Draft cancelled by the owner before the notes were saved. Nothing was written.',
+          false,
+        );
+      }
+      const fresh =
+        loadMusicQueue(storeRoot || process.cwd()).releases.find((row) => row.id === current.id) || null;
+      if (
+        !fresh ||
+        fresh.status !== 'pending' ||
+        fresh.step !== before.step ||
+        fresh.notes.trim() !== '' ||
+        fresh.title !== before.title ||
+        fresh.artist !== before.artist ||
+        fresh.tracks.length !== before.trackCount
+      ) {
+        return result(
+          fresh ?? current,
+          'waiting',
+          'Release changed while the draft was in flight. The newer state was kept and the draft was discarded.',
+          false,
+        );
+      }
       const release = patchRelease(storeRoot || process.cwd(), current.id, (row) => {
         row.notes = notes;
         row.step = 'ready';
@@ -190,6 +228,7 @@ export async function runMusicTool(
       storeRoot: options.storeRoot,
       draft: args.draft === true,
       config: options.config,
+      signal: options.signal,
       ...flagsFrom(args),
     });
   }

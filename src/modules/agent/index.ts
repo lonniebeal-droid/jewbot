@@ -82,6 +82,12 @@ export interface SecretConfirmRequest {
   reason: string;
 }
 
+export interface ReleaseDoneConfirmRequest {
+  id: string;
+  title: string;
+  artist: string;
+}
+
 export interface AgentDeps {
   files: FileWorkspace;
   terminal: TerminalSession;
@@ -102,6 +108,12 @@ export interface AgentDeps {
   confirmEdit?: (req: EditConfirmRequest) => Promise<boolean>;
   /** Human gate before reading .env / key material. Missing callback means refuse. */
   confirmSecret?: (req: SecretConfirmRequest) => Promise<boolean>;
+  /**
+   * Human gate before a music release is marked done. Missing callback or a
+   * false result means the release is not marked done. The model cannot
+   * satisfy this gate by setting args.confirmed / args.approved.
+   */
+  confirmReleaseDone?: (req: ReleaseDoneConfirmRequest) => Promise<boolean>;
   /** Fired after a write lands, so the UI can undo that edit id on this workspace. */
   onEditApplied?: (editId: string, workspace: FileWorkspace) => void;
   /**
@@ -354,9 +366,9 @@ export class AgentLoop {
         case 'music_list_releases':
           return formatMusicList(musicListReleases({ storeRoot: this.deps.files.projectRoot }));
         case 'music_next_free':
-          return await this.observeMusicNext(tool);
+          return await this.observeMusicNext(tool, signal);
         case 'music_mark':
-          return this.observeMusicMark(tool);
+          return await this.observeMusicMark(tool, signal);
         case 'ask_owner':
           return String(tool.args.question ?? 'Owner input required');
         default:
@@ -551,11 +563,12 @@ export class AgentLoop {
     return formatTerminalObservation(result);
   }
 
-  private async observeMusicNext(tool: AgentToolCall): Promise<string> {
+  private async observeMusicNext(tool: AgentToolCall, signal?: AbortSignal): Promise<string> {
     try {
       const next = await musicNextFree({
         storeRoot: this.deps.files.projectRoot,
         draft: tool.args.draft === true,
+        signal,
         ...musicFlags(tool.args),
       });
       return formatMusicNext(next);
@@ -564,15 +577,40 @@ export class AgentLoop {
     }
   }
 
-  private observeMusicMark(tool: AgentToolCall): string {
+  private async observeMusicMark(tool: AgentToolCall, signal?: AbortSignal): Promise<string> {
     const status = tool.args.status;
     if (status !== 'pending' && status !== 'blocked' && status !== 'done') {
       return 'ERROR: music_mark status must be pending, blocked, or done.';
     }
+    const id = typeof tool.args.id === 'string' ? tool.args.id : '';
+    if (status === 'done') {
+      if (signal?.aborted) return 'REFUSED: music_mark done was cancelled. Nothing was written.';
+      const target = musicListReleases({ storeRoot: this.deps.files.projectRoot }).find(
+        (row) => row.id === id,
+      );
+      if (!target) return `ERROR: Music release ${id} was not found.`;
+      if (!this.deps.confirmReleaseDone) {
+        return `REFUSED: music_mark done for ${target.id} needs the owner to confirm. No confirmation was given. Nothing was written. Do not retry unless the owner asks.`;
+      }
+      let approved = false;
+      try {
+        approved = await this.deps.confirmReleaseDone({
+          id: target.id,
+          title: target.title,
+          artist: target.artist,
+        });
+      } catch (err) {
+        return `ERROR: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      if (signal?.aborted) return 'REFUSED: music_mark done was cancelled. Nothing was written.';
+      if (!approved) {
+        return `REFUSED: music_mark done for ${target.id} was not applied. The owner did not confirm. Nothing was written.`;
+      }
+    }
     try {
       const release = musicMark(
         {
-          id: typeof tool.args.id === 'string' ? tool.args.id : '',
+          id,
           status,
           notes: typeof tool.args.notes === 'string' ? tool.args.notes : undefined,
           reason: typeof tool.args.reason === 'string' ? tool.args.reason : undefined,

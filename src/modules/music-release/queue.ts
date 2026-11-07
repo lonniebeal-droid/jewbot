@@ -254,12 +254,48 @@ function writeQueue(storeRoot: string, queue: MusicQueueFile): void {
 }
 
 function queuePath(storeRoot: string): string {
-  const root = path.resolve(storeRoot);
-  const file = path.resolve(root, '.jewbot', 'music-release.json');
+  const root = realRoot(storeRoot);
+  const file = materializeInsideSync(root, path.resolve(root, '.jewbot', 'music-release.json'));
   if (file !== root && !file.startsWith(root + path.sep)) {
     throw new Error('Music release queue path escapes the store root.');
   }
   return file;
+}
+
+/** Resolve the store root through symlinks, like FileWorkspace.resolveInside. */
+function realRoot(storeRoot: string): string {
+  const root = path.resolve(storeRoot);
+  try {
+    return fs.realpathSync(root);
+  } catch {
+    return root;
+  }
+}
+
+/**
+ * Sync edition of the FileWorkspace ancestor walk: resolve the nearest
+ * existing ancestor of `abs` through symlinks, then re-append the missing
+ * parts. A `.jewbot` directory (or the queue file itself) that is a symlink
+ * outside the store root resolves outside it, and queuePath rejects it.
+ */
+function materializeInsideSync(rootReal: string, abs: string): string {
+  const rootPrefix = rootReal + path.sep;
+  if (abs !== rootReal && !abs.startsWith(rootPrefix)) {
+    throw new Error(`Music release queue path escapes the store root: ${abs}`);
+  }
+  const missing: string[] = [];
+  let probe = abs;
+  while (probe !== rootReal && probe.startsWith(rootPrefix)) {
+    try {
+      const real = fs.realpathSync(probe);
+      return missing.reverse().reduce((acc, part) => path.join(acc, part), real);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      missing.push(path.basename(probe));
+      probe = path.dirname(probe);
+    }
+  }
+  return abs;
 }
 
 function rootOf(options: MusicStoreOptions): string {

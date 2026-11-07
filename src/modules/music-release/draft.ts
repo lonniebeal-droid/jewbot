@@ -70,9 +70,10 @@ export function draftPrompt(release: MusicRelease): string {
 export async function draftReleaseNotes(
   release: MusicRelease,
   partial?: Partial<OllamaConfig>,
+  signal?: AbortSignal,
 ): Promise<string> {
   const cfg = assertMusicDraftLocal(partial);
-  const text = (await chatOnce([{ role: 'user', content: draftPrompt(release) }], cfg)).trim();
+  const text = (await chatOnce([{ role: 'user', content: draftPrompt(release) }], cfg, { signal })).trim();
   if (!text) throw new Error('Local Ollama returned empty release notes.');
   return text.length > DRAFT_CHARS ? `${text.slice(0, DRAFT_CHARS)}…` : text;
 }
