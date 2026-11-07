@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "tsc && npm run copy:static",
-    "copy:static": "mkdir -p dist/renderer && cp src/renderer/index.html src/renderer/renderer.js dist/renderer/",
+    "copy:static": "node scripts/copy-static.js",
     "start": "npm run build && electron .",
     "rebuild:native": "electron-builder install-app-deps",
     "dist": "npm run build && node scripts/dist.js",
