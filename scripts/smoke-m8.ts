@@ -274,15 +274,15 @@ async function testHealth() {
     const echo = getModule('echo');
     const fleet = getModule('fleet-triage');
     const muse = getModule('muse');
-    expect(!!echo && !!fleet && !!muse, 'stubs and muse are registered');
+    expect(!!echo && !!fleet && !!muse, 'echo, fleet, and muse are registered');
     const echoHealth = await echo!.health();
     const fleetHealth = await fleet!.health();
     expect(echoHealth.ok && (echoHealth.detail || '').includes('qwen2.5-coder:7b'), `echo health ${echoHealth.detail}`);
     expect(fleetHealth.ok, 'fleet health ok');
-    expect(calls === 1, `stubs share one tags ping (${calls})`);
+    expect(calls === 2, `echo pings tags itself; fleet uses the shared stub cache (${calls})`);
     const museHealth = await muse!.health();
     expect(museHealth.ok && (museHealth.detail || '').includes('qwen2.5-coder:7b'), `muse health ${museHealth.detail}`);
-    expect(calls === 2, `muse pings tags itself (${calls})`);
+    expect(calls === 3, `muse pings tags itself (${calls})`);
 
     const rows = await listModuleHealth();
     const echoRow = rows.find((row) => row.id === 'echo');
