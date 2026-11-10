@@ -19,6 +19,12 @@ export interface OllamaConfig {
   host: string;
   model: string;
   allowPaidApis: boolean;
+  /**
+   * Opt-in for the LAN host registry. Loopback is already allowed.
+   * When set, RFC1918, Tailscale 100.64/10, and IPv6 ULA may be contacted.
+   * Public addresses and paid hostnames stay refused. Default callers leave this unset.
+   */
+  allowPrivateLan?: boolean;
 }
 
 export interface ChatStreamOptions {
@@ -101,6 +107,56 @@ export function isLocalOllamaHost(host: string): boolean {
   return octets[0] === 127;
 }
 
+function ipv4Octets(hostname: string): number[] | null {
+  const match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!match) return null;
+  const octets = match.slice(1).map((part) => Number(part));
+  if (octets.some((n) => n > 255)) return null;
+  return octets;
+}
+
+/** 10/8, 172.16/12, 192.168/16, and Tailscale's 100.64/10 range. Not the rest of 100/8. */
+export function isPrivateOrTailscaleIPv4(hostname: string): boolean {
+  const octets = ipv4Octets(hostname);
+  if (!octets) return false;
+  const [a, b] = octets;
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  return false;
+}
+
+function isIpv6Ula(hostname: string): boolean {
+  if (!hostname.includes(':')) return false;
+  const first = hostname.split(':')[0] || '0';
+  if (!/^[0-9a-f]{1,4}$/i.test(first)) return false;
+  const value = Number.parseInt(first, 16);
+  return value >= 0xfc00 && value <= 0xfdff;
+}
+
+/**
+ * Addresses the LAN registry may contact after assertLocalSpendOnly(false).
+ * Loopback, private LAN, Tailscale 100.64/10, and IPv6 unique-local.
+ * Public IPs, 0.0.0.0, and ordinary DNS names are not in this set.
+ */
+export function isRoutableFreeHost(host: string): boolean {
+  let hostname: string;
+  try {
+    hostname = hostnameOf(normalizeOllamaHost(host));
+  } catch {
+    return false;
+  }
+  if (isPaidProviderHost(normalizeOllamaHost(host))) return false;
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '::1') return true;
+  const v4 = ipv4Octets(hostname);
+  if (v4) {
+    if (v4[0] === 127) return true;
+    return isPrivateOrTailscaleIPv4(hostname);
+  }
+  return isIpv6Ula(hostname);
+}
+
 export function isPaidProviderHost(host: string): boolean {
   let hostname: string;
   try {
@@ -119,6 +175,12 @@ export function assertOllamaAllowed(cfg: OllamaConfig): void {
   const host = normalizeOllamaHost(cfg.host);
   const decision = assertLocalSpendOnly(cfg.allowPaidApis);
   if (isLocalOllamaHost(host) && !isPaidProviderHost(host)) return;
+  if (cfg.allowPrivateLan === true && isRoutableFreeHost(host) && !isPaidProviderHost(host)) {
+    // The registry opts into private LAN only while the spend gate stays closed.
+    const closed = assertLocalSpendOnly(false);
+    if (closed.ok) throw new Error('LAN routing keeps the spend gate closed.');
+    return;
+  }
   if (!decision.ok) {
     const kind = isPaidProviderHost(host) ? 'paid provider' : 'non-local host';
     throw new Error(`${decision.reason} Refusing ${kind} ${host}.`);
