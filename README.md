@@ -4,7 +4,7 @@
 
 Terminal control, SSH to your machines (Dell / Pi / Mac), agentic plan→act→observe loop, file edits with diff preview, project-aware context, and cascade execution across milestones.
 
-> **Status:** Milestone **M8** (this branch) — module hub. Other bots register under Jewbot and use local Ollama. Cascade (M6) and the Muse finisher stay as they are. **M7** packaging is still open.
+> **Status:** Milestone **M7** (this branch) — unsigned installers for macOS (Apple silicon and Intel), Linux AppImage and deb (x64 for a Dell, arm64 for a Raspberry Pi), and Windows NSIS (x64). Code signing and notarization are **off** (they cost money; that is an owner decision). Milestone **M8** (module hub) is already on main: other bots register under Jewbot and use local Ollama. Cascade (M6) and the Muse finisher stay as they are.
 
 ## Why Jewbot?
 
@@ -28,6 +28,89 @@ Terminal control, SSH to your machines (Dell / Pi / Mac), agentic plan→act→o
    ollama serve                   # default http://127.0.0.1:11434
    ```
 3. (Optional) SSH keys for remote hosts — never commit private keys
+
+## Install
+
+Packaged builds are **unsigned**. Jewbot does not buy a certificate, and it does not notarize. Gatekeeper (macOS) and SmartScreen (Windows) will warn until you choose to open the app. Turning signing on later is an owner decision because it costs money. The GitHub Actions workflow never publishes a release: a `v*` tag only uploads installers to a **draft**.
+
+Ollama is not inside the installer. Install it on the same machine (or use a host you already run) and leave `JEWBOT_ALLOW_PAID` unset.
+
+Build them yourself from this repo (`npm install` first). `npm run dist` packages the OS you are on, for that machine's CPU only, so `node-pty` and ssh2's optional `cpu-features` rebuild with `@electron/rebuild` via `electron-builder install-app-deps`. Pass `--x64` or `--arm64` after `--` when you are on a matching machine.
+
+ssh2 also has an optional native cipher addon (`sshcrypto.node`). It is **not** included in the package. Electron's BoringSSL does not export the OpenSSL symbols that addon calls (`ERR_set_mark`), so a Node build fails to load and a system-OpenSSL build aborts the process. ssh2 catches the missing addon and uses its JavaScript crypto instead. SSH still works.
+
+```bash
+npm run dist          # this OS, this CPU
+npm run dist:mac      # dmg + zip
+npm run dist:linux    # AppImage + deb
+npm run dist:win      # NSIS
+npm run rebuild:native
+```
+
+### macOS (Apple silicon and Intel)
+
+Artifacts: `Jewbot-0.1.0-mac-arm64.dmg` and `Jewbot-0.1.0-mac-arm64.zip`, plus the same names with `x64`.
+
+1. Open the dmg and drag Jewbot to Applications, or unzip the zip.
+2. First launch: right-click the app, choose **Open**, then **Open** again. Or, after copying it out of the dmg:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Jewbot.app
+```
+
+Notarization is off, so macOS will not have a notarization ticket.
+
+### Windows (x64, including a Dell)
+
+Artifact: `Jewbot-0.1.0-win-x64.exe` (NSIS). Run the installer. If SmartScreen says it protected your PC, choose **More info**, then **Run anyway**. The installer is per-user and lets you pick a folder. There is no Authenticode signature.
+
+### Linux (x64, including a Dell)
+
+electron-builder names these with the distro arch, not `x64`:
+
+- `Jewbot-0.1.0-linux-x86_64.AppImage`
+- `Jewbot-0.1.0-linux-amd64.deb`
+
+```bash
+chmod +x Jewbot-0.1.0-linux-x86_64.AppImage
+./Jewbot-0.1.0-linux-x86_64.AppImage
+```
+
+If the AppImage cannot mount itself, install FUSE (`sudo apt install libfuse2`) or run `./Jewbot-0.1.0-linux-x86_64.AppImage --appimage-extract-and-run`.
+
+Debian or Ubuntu:
+
+```bash
+sudo apt install ./Jewbot-0.1.0-linux-amd64.deb
+jewbot
+```
+
+### Raspberry Pi (64-bit, linux arm64)
+
+Use a 64-bit Raspberry Pi OS. The 32-bit image is not a build target. Artifacts: `Jewbot-0.1.0-linux-arm64.AppImage` and `Jewbot-0.1.0-linux-arm64.deb` (same install steps as Linux above). On the Pi itself, `npm run dist:linux` builds the arm64 packages.
+
+Install Ollama, then pull a **small** model. A 7B model is a poor fit for a Pi:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen2.5-coder:1.5b
+```
+
+Start Jewbot pointed at that model:
+
+```bash
+JEWBOT_MODEL=qwen2.5-coder:1.5b jewbot
+```
+
+`OLLAMA_HOST` still defaults to `http://127.0.0.1:11434`. A non-local host is refused unless you set `JEWBOT_ALLOW_PAID=1`.
+
+### Version
+
+The window title, the header badge, and **About** read the version from `package.json` (currently **0.1.0**, milestone M7). A packaged build prints the same line and exits:
+
+```bash
+jewbot --jewbot-version
+```
 
 ## Quick start
 
