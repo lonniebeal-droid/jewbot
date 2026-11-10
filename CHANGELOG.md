@@ -2,9 +2,32 @@
 
 All notable changes to Jewbot are listed here. The packaged app version comes from `package.json`.
 
-## 0.1.0 — 2026-11-06
+## 0.1.0 — 2026-11-10
 
-First installable build. Milestones M0 through M7 are in this version. Installers are unsigned. Code signing and Apple notarization are off because they cost money. That stays an owner decision.
+First installable build. Milestones M0 through M7, plus the local modules and LAN routing below. Installers are unsigned. Code signing and Apple notarization are off because they cost money. That stays an owner decision. Spend stays $0.
+
+### LAN multi-host Ollama routing (#17)
+
+- Host registry in `JEWBOT_OLLAMA_HOSTS` or `~/.jewbot/ollama-hosts.json`. List order is the fallback order (mac, dell, pi, then `127.0.0.1:11434`).
+- Each host passes `assertLocalSpendOnly` before `GET /api/tags`. Only loopback, private LAN, Tailscale `100.64.0.0/10`, and IPv6 unique-local addresses are contacted.
+- Hub `health()` lists every host and selects the first healthy host that has the requested model. Public and paid hosts are not fetched. No new SSH actions.
+
+### TwinRent (#16)
+
+- Local listing checklist in `.jewbot/twinrent-plan.json`. The file stores step ids and statuses. The publish step stays blocked.
+- `twinrent_draft` uses local Ollama after `assertLocalSpendOnly`. Credentials, keystrokes, and tenant contacts are refused. Nothing is posted to a rental site.
+
+### Echo (#15)
+
+- Local worker on Ollama at `http://127.0.0.1:11434`, model `tinyllama`.
+- `health()` pings `GET /api/tags`. `echo_task` calls `chatOnce` after `assertLocalSpendOnly`.
+- Credential and keystroke requests do not fetch. There is no cloud agent.
+
+### Music release (#14)
+
+- Local weekly album checklist in `.jewbot/music-release.json`.
+- Agent tools: `music_list_releases`, `music_next_free`, `music_mark`. Marking a release done waits for the owner.
+- DistroKid, store login, and payment stay human gates. Optional notes use local Ollama only.
 
 ### M7 — Packaging
 
