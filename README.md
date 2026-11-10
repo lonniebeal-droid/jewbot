@@ -258,6 +258,27 @@ Echo is a local worker, not a stub. It uses Ollama at `http://127.0.0.1:11434` w
 
 TwinRent is a local listing checklist, not a stub. `twinrent_list`, `twinrent_next`, and `twinrent_mark` use `.jewbot/twinrent-plan.json` in the open project and store only step ids and statuses. The publish step stays blocked. `health()` pings local Ollama at `http://127.0.0.1:11434` on `/api/tags`. `twinrent_draft` sends unit facts through `src/modules/llm/ollama.ts` after `assertLocalSpendOnly`. It does not publish, log into a rental site, or collect credentials, keystrokes, or tenant contacts. A non-local host is refused even when `JEWBOT_ALLOW_PAID=1`.
 
+### LAN Ollama hosts
+
+The hub can try more than one Ollama process. Set `JEWBOT_OLLAMA_HOSTS` or create `~/.jewbot/ollama-hosts.json` (a project `.jewbot/ollama-hosts.json` is used when the home file is absent). The list order is the fallback order. A typical list is mac, dell, pi, then this machine:
+
+```bash
+JEWBOT_OLLAMA_HOSTS=mac=http://192.168.1.10:11434,dell=http://10.1.0.5:11434,pi=http://100.64.0.8:11434,local=http://127.0.0.1:11434
+```
+
+```json
+{
+  "hosts": [
+    { "name": "mac", "host": "http://192.168.1.10:11434" },
+    { "name": "dell", "host": "http://10.1.0.5:11434" },
+    { "name": "pi", "host": "http://100.64.0.8:11434" },
+    { "name": "local", "host": "http://127.0.0.1:11434" }
+  ]
+}
+```
+
+Every host is checked with `assertLocalSpendOnly` before `GET /api/tags`. The only addresses that pass are loopback, private LAN (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), Tailscale (`100.64.0.0/10`, not the rest of `100.0.0.0/8`), and IPv6 unique-local. Public IPs and paid hostnames are refused and are not fetched, even when `JEWBOT_ALLOW_PAID=1`. The Ollama module `health()` lists each host as `ok`, `down`, or `refused` and selects the first healthy host that has the requested model (`JEWBOT_MODEL`, unless a caller names one). Later hosts are still probed. This registry does not add SSH actions.
+
 ### Destructive commands
 
 Jewbot does not run destructive commands by itself. Patterns such as `rm -rf`, `git push --force` / `git push -f`, `mkfs`, `dd of=` / `dd if=`, `chmod -R 777 /`, `git reset --hard`, and `git clean -fd` open a confirm dialog with the exact command.
@@ -283,14 +304,16 @@ npm run typecheck
 npm test
 ```
 
-`npm test` runs the safety smoke, `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn), `npm run test:m2` (destructive classification, a streamed `echo`, session kill, and `run_terminal` through the confirm gate), `npm run test:m3` (diff preview, Accept/Reject, undo, secret-path refusal, and jailed writes on a temp directory), `npm run test:m4` (gitignore-aware index, secret and symlink jail, `find_files` / `search_context`, and a scripted project-aware agent turn), `npm run test:m5` (mocked `ssh2`: allowlist refusal, TOFU, streamed exec, passphrase redaction, and `ssh_exec` through the same confirm gate), `npm run test:m6` (mocked Ollama: cascade auto-advance, blocked-then-skip, acceptance pass/fail, stop, pause, wall time, the step cap, and the paid-host refusal), `npm run test:muse` (five open release blockers, local fleet health and chat with mocked `fetch`, and a refused non-local host with zero fetches), `npm run test:m8` (module register/list/get, discovery, paid-host refusal including xAI, and Echo, fleet, and Muse health with mocked Ollama), `npm run test:fleet` (local and allowlisted SSH Ollama tags, no paid API), `npm run test:music` (local weekly checklist, mocked Ollama notes, DistroKid, Spotify, and payment gates with zero distributor fetches, and the same three tools through the agent), `npm run test:echo` (mocked Ollama: tinyllama at 127.0.0.1:11434, a tags ping, one task reply, paid-host refusal with zero fetches, and a refused credential or keystroke request), and `npm run test:twinrent` (local checklist, a refused publish mark, mocked Ollama tags and draft, paid-host refusal with zero fetches, and refused credential, keystroke, email, and phone facts). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, rejects one diff and accepts then undoes another, runs `echo` in the terminal panel, cancels a destructive confirm, connects a mocked SSH host (passphrase plus host-key trust) and cancels a remote destructive command, stops a cascade task and then auto-advances past a blocked one, lists registered modules with ok or down health, and sends one live agent message (it errors cleanly when Ollama is not running).
+`npm test` runs the safety smoke, `npm run test:m1` (Ollama client + jailed `read_file` / `list_dir` + a scripted agent turn), `npm run test:m2` (destructive classification, a streamed `echo`, session kill, and `run_terminal` through the confirm gate), `npm run test:m3` (diff preview, Accept/Reject, undo, secret-path refusal, and jailed writes on a temp directory), `npm run test:m4` (gitignore-aware index, secret and symlink jail, `find_files` / `search_context`, and a scripted project-aware agent turn), `npm run test:m5` (mocked `ssh2`: allowlist refusal, TOFU, streamed exec, passphrase redaction, and `ssh_exec` through the same confirm gate), `npm run test:m6` (mocked Ollama: cascade auto-advance, blocked-then-skip, acceptance pass/fail, stop, pause, wall time, the step cap, and the paid-host refusal), `npm run test:muse` (five open release blockers, local fleet health and chat with mocked `fetch`, and a refused non-local host with zero fetches), `npm run test:m8` (module register/list/get, discovery, paid-host refusal including xAI, and Echo, fleet, and Muse health with mocked Ollama), `npm run test:fleet` (local and allowlisted SSH Ollama tags, no paid API), `npm run test:music` (local weekly checklist, mocked Ollama notes, DistroKid, Spotify, and payment gates with zero distributor fetches, and the same three tools through the agent), `npm run test:echo` (mocked Ollama: tinyllama at 127.0.0.1:11434, a tags ping, one task reply, paid-host refusal with zero fetches, and a refused credential or keystroke request), `npm run test:twinrent` (local checklist, a refused publish mark, mocked Ollama tags and draft, paid-host refusal with zero fetches, and refused credential, keystroke, email, and phone facts), and `npm run test:route` (mocked LAN registry: private and Tailscale hosts, a refused public or paid host with zero fetches, and the first healthy host that has the requested model). `npm run test:ui` opens the Electron window, checks the preload bridge, streams a fake token/tool turn, rejects one diff and accepts then undoes another, runs `echo` in the terminal panel, cancels a destructive confirm, connects a mocked SSH host (passphrase plus host-key trust) and cancels a remote destructive command, stops a cascade task and then auto-advances past a blocked one, lists registered modules with ok or down health, and sends one live agent message (it errors cleanly when Ollama is not running).
 
 ## Environment
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama base URL. `127.0.0.1:11434` (no scheme) is accepted. Non-local hosts need `JEWBOT_ALLOW_PAID=1`. |
-| `JEWBOT_MODEL` | `qwen2.5-coder:7b` | Chat model name sent to `/api/chat` |
+| `JEWBOT_MODEL` | `qwen2.5-coder:7b` | Chat model name sent to `/api/chat`. The LAN registry picks the first healthy host that has this model. |
+| `JEWBOT_OLLAMA_HOSTS` | unset | Comma-separated fallback list, `name=url`. Overrides the host files. Only loopback, private LAN, and Tailscale `100.64.0.0/10` are contacted. |
+| `JEWBOT_OLLAMA_HOSTS_FILE` | `~/.jewbot/ollama-hosts.json` | Host registry file. A project `.jewbot/ollama-hosts.json` is used when this file is missing. |
 | `JEWBOT_PROJECT_ROOT` | process cwd | Directory the agent may list and read. The UI can change it with **Open project**. |
 | `JEWBOT_ALLOW_PAID` | unset/`0` | Must be `1` before any paid or non-local provider host is contacted |
 | `JEWBOT_TERMINAL_BACKEND` | `child_process` | `child_process` keeps stdout and stderr separate. `pty` uses `node-pty` when that optional module loads |
