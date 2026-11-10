@@ -1,17 +1,62 @@
-import { migrationStub } from '../plugin/stub';
+/**
+ * TwinRent. A local listing planner.
+ * The checklist stays on disk in the open project. Drafts use local Ollama
+ * after assertLocalSpendOnly. There is no rental-platform client, no
+ * credential capture, and no keystroke capture.
+ */
 
-/** Twinrent stub. Rental-platform tokens stay off this machine's repo. */
-export const jewbotModule = migrationStub({
+import type { JewbotModule } from '../plugin/types';
+import { listSteps, markStep, nextFreeStep } from './plan';
+import { twinrentDraft, twinrentHealth } from './local';
+
+export type { StepStatus, TwinrentStep, TwinrentStepId } from './checklist';
+export { bundledPlan, PLAN_FILE_VERSION, TWINRENT_STEP_IDS } from './checklist';
+export type { TwinrentDraft } from './local';
+export {
+  assertTwinrentLocal,
+  isSensitiveListingFacts,
+  resolveTwinrentConfig,
+  TWINRENT_HOST,
+  twinrentDraft,
+  twinrentHealth,
+} from './local';
+export type { MarkStepResult, PlanSource } from './plan';
+export { listSteps, markStep, nextFreeStep, planFilePath, resolveTwinrentRoot } from './plan';
+
+export const jewbotModule: JewbotModule = {
   id: 'twinrent',
-  title: 'Twinrent',
+  title: 'TwinRent',
   description:
-    'Rental assistant stub. Platform tokens stay owner-local. This build does not talk to a rental API.',
-  version: '0.1.0',
-  capabilities: ['stub', 'chat'],
+    'Local listing checklist and draft. Ollama stays on 127.0.0.1:11434 after assertLocalSpendOnly. Does not publish, log in, or capture credentials or keystrokes.',
+  version: '0.2.0',
+  capabilities: ['plan', 'chat', 'local-only'],
   tools: [
     {
-      name: 'draft_listing_note',
-      description: 'Reserved. When wired, it calls moduleChat on local Ollama. It does not publish a listing.',
+      name: 'twinrent_list',
+      description: 'Read the local prep checklist. No rental-platform call and no tenant data.',
+    },
+    {
+      name: 'twinrent_next',
+      description: 'Next open prep step that is not the publish gate. Does not post a listing.',
+    },
+    {
+      name: 'twinrent_mark',
+      description: 'Set one local step to open, blocked, or done. Publish cannot be marked done.',
+    },
+    {
+      name: 'twinrent_draft',
+      description:
+        'Draft a public listing note on local Ollama after assertLocalSpendOnly. Refuses credentials, keystrokes, and tenant contacts. Does not publish.',
     },
   ],
-});
+  health() {
+    return twinrentHealth();
+  },
+};
+
+export const twinrentTools = {
+  list: listSteps,
+  next: nextFreeStep,
+  mark: markStep,
+  draft: twinrentDraft,
+};
