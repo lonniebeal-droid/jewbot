@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "releases": [
+    {
+      "id": "rel_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "title": "Week 45",
+      "artist": "JU Music",
+      "week": "2026-W45",
+      "tracks": [
+        { "title": "Atlanta Night", "artist": "JU Music" },
+        { "title": "Southbound" }
+      ],
+      "status": "pending",
+      "step": "tracks",
+      "notes": "",
+      "createdAt": "2026-11-06T15:00:00.000Z",
+      "updatedAt": "2026-11-06T15:00:00.000Z"
+    },
+    {
+      "id": "rel_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "title": "Week 44",
+      "artist": "JU Music",
+      "week": "2026-W44",
+      "tracks": [
+        { "title": "Hold the Gate" }
+      ],
+      "status": "blocked",
+      "step": "distribute",
+      "notes": "Local notes are ready. The owner still uploads this one.",
+      "reason": "Human gate: DistroKid upload, Spotify for Artists, store login, and any payment stay with the owner. This module does not call those services and does not spend.",
+      "createdAt": "2026-10-30T15:00:00.000Z",
+      "updatedAt": "2026-11-06T15:00:00.000Z"
+    }
+  ]
+}

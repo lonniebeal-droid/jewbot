@@ -10,4 +10,5 @@ export * as muse from './muse';
 export * as fleetTriage from './fleet-triage';
 export * as streetTrader from './street-trader';
 export * as portfolioSweeper from './portfolio-sweeper';
+export * as musicRelease from './music-release';
 export * as plugin from './plugin';
