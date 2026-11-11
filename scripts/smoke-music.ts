@@ -431,6 +431,50 @@ async function testAgentTools() {
   }
 }
 
+async function testReleaseDoneGate() {
+  const original = globalThis.fetch;
+  const root = tempStore();
+  const release = addMusicRelease(album, { storeRoot: root });
+  const runOnce = async (approved: boolean) => {
+    let step = 0;
+    const script = [
+      JSON.stringify({ tool: 'music_mark', args: { id: release.id, status: 'done' } }),
+      'FINAL: done requested',
+    ];
+    globalThis.fetch = async () => {
+      const content = script[Math.min(step, script.length - 1)];
+      step += 1;
+      return new Response(ndjson(content), { status: 200 });
+    };
+    const agent = new AgentLoop({
+      files: new FileWorkspace(root),
+      terminal: new TerminalSession(),
+      ssh: new SshManager({ autoload: false }),
+      context: new ContextIndexer(root),
+      llm: { host: 'http://127.0.0.1:11434', model: 'test-model', allowPaidApis: false },
+      maxSteps: 6,
+      confirmReleaseDone: async () => approved,
+    });
+    let observations = '';
+    for await (const ev of agent.runStream('mark the weekly album done')) {
+      if (ev.type === 'done') {
+        observations = ev.result.steps.map((item) => item.observation || '').join('\n');
+      }
+    }
+    return observations;
+  };
+  try {
+    const refused = await runOnce(false);
+    expect(refused.includes('REFUSED'), `declined done should refuse (${refused})`);
+    expect(musicListReleases({ storeRoot: root })[0].status === 'pending', 'declined done leaves release pending');
+    const approved = await runOnce(true);
+    expect(!approved.includes('REFUSED'), `approved done should apply (${approved})`);
+    expect(musicListReleases({ storeRoot: root })[0].status === 'done', 'approved done marks release done');
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
 function testSourcesStayLocal() {
   const dir = path.join(__dirname, '../src/modules/music-release');
   const banned = ['distrokid.com', 'spotify.com', 'api.spotify.com', 'openai.com', 'api.x.ai', 'stripe.com'];
@@ -455,6 +499,7 @@ async function main() {
   await testToolGate();
   await testHealthPing();
   await testAgentTools();
+  await testReleaseDoneGate();
   console.log('smoke-music: PASS');
 }
 
