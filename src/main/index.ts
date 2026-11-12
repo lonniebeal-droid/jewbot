@@ -569,6 +569,24 @@ app.whenReady().then(async () => {
       terminal: defaultTerminal,
       ssh: defaultSshManager,
       context,
+      // One-shot run has no renderer request to round-trip a confirmation
+      // through, so ask the owner directly with a native dialog. Cancel is
+      // the default: without an explicit "Mark done" nothing is written.
+      confirmReleaseDone: async (releaseReq) => {
+        const win = BrowserWindow.getFocusedWindow() ?? mainWindow;
+        const box = {
+          type: 'question' as const,
+          buttons: ['Mark done', 'Cancel'],
+          defaultId: 1,
+          cancelId: 1,
+          title: 'Mark release done?',
+          message: `Mark "${releaseReq.title}" by ${releaseReq.artist} done?`,
+          detail:
+            'This only records completion after your distributor/store steps. It does not upload, log in, or pay.',
+        };
+        const result = win ? await dialog.showMessageBox(win, box) : await dialog.showMessageBox(box);
+        return result.response === 0;
+      },
     });
     return agent.run(String(goal ?? ''));
   });
@@ -624,6 +642,22 @@ app.whenReady().then(async () => {
           event.sender,
           req.requestId,
           { command: secretReq.path, reason: secretReq.reason, category: 'secret_path' },
+          ctrl.signal,
+        ),
+      // The music done-gate: without this callback every music_mark done is
+      // refused in the desktop app, even when the owner explicitly asks for
+      // it. Route it through the same owner-confirm flow as destructive
+      // commands; the renderer shows a release-specific prompt for this
+      // category instead of the destructive-command wording.
+      confirmReleaseDone: (releaseReq) =>
+        requestOwnerConfirm(
+          event.sender,
+          req.requestId,
+          {
+            command: `music_mark done ${releaseReq.id}`,
+            reason: `Mark "${releaseReq.title}" by ${releaseReq.artist} done? This only records completion after your distributor/store steps. It does not upload, log in, or pay.`,
+            category: 'music_release_done',
+          },
           ctrl.signal,
         ),
       onEditApplied: (editId, workspace) => {
