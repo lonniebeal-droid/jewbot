@@ -35,7 +35,7 @@
     "test:fleet": "npx --yes tsx scripts/smoke-fleet.ts",
     "test:street": "npx --yes tsx scripts/smoke-street-trader.ts",
     "test:portfolio": "npx --yes tsx scripts/smoke-portfolio.ts",
-    "test:music": "npx --yes tsx scripts/smoke-music.ts",
+    "test:music": "tsx scripts/smoke-music.ts",
     "test:echo": "npx --yes tsx scripts/smoke-echo.ts",
     "test:twinrent": "npx --yes tsx scripts/smoke-twinrent.ts",
     "test:route": "npx --yes tsx scripts/smoke-route.ts",
@@ -58,7 +58,8 @@
     "@types/ssh2": "^1.15.4",
     "electron": "^35.0.0",
     "electron-builder": "^26.18.0",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "tsx": "^4.20.6"
   },
   "optionalDependencies": {
     "node-pty": "^1.0.0"
