@@ -1,0 +1,36 @@
+name: JU Music smoke test (offline runner)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/smoke-music.ts'
+      - 'src/modules/music-release/**'
+      - '.github/workflows/ju-music-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  music-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install declared dependencies without lifecycle scripts
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Verify local tsx runner is installed
+        run: test -x node_modules/.bin/tsx
+      - name: Run JU Music smoke test
+        run: npm run test:music
+      - name: Preserve generated lockfile for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ju-music-generated-package-lock
+          path: package-lock.json
+          if-no-files-found: error
