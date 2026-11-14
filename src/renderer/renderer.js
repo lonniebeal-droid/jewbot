@@ -134,14 +134,18 @@ function askConfirm(command, reason, category) {
       const blurb = document.getElementById('confirmBlurb');
       const yes = document.getElementById('confirmYes');
       const secret = category === 'secret_path';
-      title.textContent = secret ? 'Open secret file?' : 'Confirm destructive command';
-      yes.textContent = secret ? 'Open' : 'Run anyway';
-      yes.className = secret ? '' : 'danger';
+      const releaseDone = category === 'music_release_done';
+      title.textContent = secret ? 'Open secret file?' : releaseDone ? 'Mark release done?' : 'Confirm destructive command';
+      yes.textContent = secret ? 'Open' : releaseDone ? 'Mark done' : 'Run anyway';
+      yes.className = secret || releaseDone ? '' : 'danger';
       blurb.textContent = secret
         ? 'Jewbot will not read this secret unless you open it. Cancel leaves it unread.'
-        : 'Jewbot will not run this unless you confirm. Cancel leaves it unrun.';
+        : releaseDone
+          ? 'This only records completion after your distributor/store steps. It does not upload, log in, or pay. Cancel leaves the release unchanged.'
+          : 'Jewbot will not run this unless you confirm. Cancel leaves it unrun.';
       document.getElementById('confirmCategory').textContent = category || 'destructive';
-      document.getElementById('confirmReason').textContent = reason || (secret ? 'This path is secret.' : 'This command is destructive.');
+      document.getElementById('confirmReason').textContent =
+        reason || (secret ? 'This path is secret.' : releaseDone ? 'Marking a release done only records completion.' : 'This command is destructive.');
       document.getElementById('confirmCommand').textContent = command || '';
       modal.hidden = false;
       const no = document.getElementById('confirmNo');
