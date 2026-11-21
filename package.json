@@ -51,9 +51,10 @@
     "test:m17": "npx --yes tsx scripts/smoke-m17.ts",
     "test:m18": "npx --yes tsx scripts/smoke-m18.ts",
     "test:m19": "npx --yes tsx scripts/smoke-m19.ts",
+    "test:m20": "npx --yes tsx scripts/smoke-m20.ts",
     "test:m21": "npx --yes tsx scripts/smoke-m21.ts",
     "test:ui": "npm run build && JEWBOT_UI_SMOKE=1 electron . --no-sandbox --disable-gpu",
-    "test": "npm run test:safety && npm run test:m1 && npm run test:m2 && npm run test:m3 && npm run test:m4 && npm run test:m5 && npm run test:m6 && npm run test:muse && npm run test:m8 && npm run test:fleet && npm run test:street && npm run test:portfolio && npm run test:music && npm run test:echo && npm run test:twinrent && npm run test:route && npm run test:m9 && npm run test:m10 && npm run test:m11 && npm run test:m12 && npm run test:m13 && npm run test:m14 && npm run test:v03 && npm run test:m15 && npm run test:m16 && npm run test:m17 && npm run test:m18 && npm run test:m19 && npm run test:m21"
+    "test": "npm run test:safety && npm run test:m1 && npm run test:m2 && npm run test:m3 && npm run test:m4 && npm run test:m5 && npm run test:m6 && npm run test:muse && npm run test:m8 && npm run test:fleet && npm run test:street && npm run test:portfolio && npm run test:music && npm run test:echo && npm run test:twinrent && npm run test:route && npm run test:m9 && npm run test:m10 && npm run test:m11 && npm run test:m12 && npm run test:m13 && npm run test:m14 && npm run test:v03 && npm run test:m15 && npm run test:m16 && npm run test:m17 && npm run test:m18 && npm run test:m19 && npm run test:m20 && npm run test:m21"
   },
   "engines": {
     "node": ">=20"
