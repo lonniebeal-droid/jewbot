@@ -92,7 +92,7 @@
   <header>
     <h1>JEWBOT</h1>
     <span class="badge" id="milestone">M7</span>
-    <span class="badge" id="version">v0.3.0</span>
+    <span class="badge" id="version">v0.4.0</span>
     <button class="secondary" id="aboutOpen" type="button">About</button>
     <span class="muted" id="spend">$0 · Ollama</span>
     <span class="root" id="projectRoot" title="">…</span>
@@ -149,6 +149,18 @@
             <button class="secondary" id="mcpRefresh" type="button">Servers</button>
           </div>
           <pre id="mcpOut" class="term-out">(local stdio only)</pre>
+        </div>
+        <div id="docsPanel">
+          <div class="row">
+            <h3 style="margin:0">Docs</h3>
+            <input id="docsFolder" placeholder="local folder" />
+            <button class="secondary" id="docsIndexFolder" type="button">Index folder</button>
+          </div>
+          <div class="row">
+            <input id="docsUrl" placeholder="https://example.com/docs" />
+            <button class="secondary" id="docsIndexUrl" type="button">Fetch once</button>
+          </div>
+          <pre id="docsOut" class="term-out"></pre>
         </div>
         <div id="backgroundPanel">
           <div class="row">

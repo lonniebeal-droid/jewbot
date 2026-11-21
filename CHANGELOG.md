@@ -2,7 +2,9 @@
 
 All notable changes to Jewbot are listed here. The packaged app version comes from `package.json`.
 
-## 0.4.0 (unreleased)
+## 0.4.0 — 2026-11-21
+
+Local MCP, background tasks on a LAN host, and offline docs. Installers stay unsigned. This changelog does not push a git tag.
 
 ### M19 — MCP client
 
@@ -15,6 +17,12 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 - Queue a goal on an allowlisted LAN SSH host. The command talks only to `127.0.0.1:11434` on that host.
 - Public and paid hosts are refused. The reply comes back as a diff.
 - Accept writes the files. The run itself does not.
+
+### M21 — Local docs
+
+- `@docs` searches rows in the M11 embedding store. A chosen local folder is indexed there.
+- A public http(s) page is fetched once and cached under `.jewbot/index`. The next index uses the cache.
+- Paid-provider hosts are refused. A codebase reindex keeps the `docs:` rows.
 
 ## 0.3.0 — 2026-11-21
 

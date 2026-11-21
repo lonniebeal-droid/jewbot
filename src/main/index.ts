@@ -21,6 +21,7 @@ import { expandMentions } from '../modules/semantic';
 import { deleteLocalModel, listLocalModels, pullLocalModel, loadSettings, saveFeatureModels } from '../modules/model-manager';
 import { loadRules, rulesEnabled, setRulesEnabled } from '../modules/rules';
 import { acceptBackgroundTask, assertBackgroundHost, enqueueBackgroundTask, runBackgroundTask, type BackgroundTask } from '../modules/background';
+import { indexDocFolder, indexDocUrl } from '../modules/docs';
 import { describeServer, loadMcpServers, setServerAllow } from '../modules/mcp';
 import { ComposerBatch } from '../modules/composer';
 import { assertAllowlisted, RemoteWorkspace } from '../modules/remote';
@@ -417,8 +418,8 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
       report.hasBridge &&
       report.missing.length === 0 &&
       report.milestone === 'M7' &&
-      report.version === '0.3.0' &&
-      (report.aboutText || '').includes('0.3.0') &&
+      report.version === '0.4.0' &&
+      (report.aboutText || '').includes('0.4.0') &&
       (report.aboutText || '').includes('unsigned') &&
       !!report.projectRoot &&
       report.sendEnabled &&
@@ -709,6 +710,24 @@ app.whenReady().then(async () => {
       inlineEdit: payload.models.inlineEdit,
     });
     return { models: saved.models };
+  });
+
+  ipcMain.handle('jewbot:docsFolder', async (_e, folder: string) => {
+    try {
+      const result = await indexDocFolder(projectRoot, String(folder ?? ''));
+      return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('jewbot:docsUrl', async (_e, url: string) => {
+    try {
+      const result = await indexDocUrl(projectRoot, String(url ?? ''));
+      return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('jewbot:backgroundRun', async (event, payload: { host?: string; model?: string; goal?: string }) => {
