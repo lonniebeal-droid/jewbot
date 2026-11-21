@@ -259,6 +259,11 @@ export class SshManager extends EventEmitter {
     }
   }
 
+  /** The live client for an allowlisted session. Callers use it for SFTP. */
+  clientFor(target: string): SshClientLike | undefined {
+    return this.resolveSession(target)?.client;
+  }
+
   disconnect(target: string): boolean {
     const session = this.resolveSession(target);
     if (!session) return false;

@@ -142,6 +142,7 @@ declare global {
       gitRun: (payload: { action: string; args?: string[]; executionId?: string }) => Promise<unknown>;
       gitConfirm: (payload: { action: 'push' | 'reset' | 'clean'; args?: string[] }) => Promise<unknown>;
       gitSuggest: () => Promise<{ message: string; error?: string }>;
+      remoteOpen: (payload: { host: string; root: string }) => Promise<{ host: string; root: string }>;
       editorList: (rel?: string) => Promise<string[]>;
       editorOpen: (rel: string) => Promise<{
         text: string;

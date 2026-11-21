@@ -43,6 +43,14 @@ export interface SshClientLike {
   on(event: 'close', listener: () => void): this;
   end(): void;
   destroy(): void;
+  sftp?(callback: (err: Error | undefined, sftp: SftpRaw) => void): void;
+}
+
+export interface SftpRaw {
+  readdir(path: string, callback: (err: Error | undefined, list?: Array<{ filename: string; longname: string; attrs?: { mode?: number; size?: number } }>) => void): void;
+  readFile(path: string, callback: (err: Error | undefined, data?: Buffer) => void): void;
+  writeFile(path: string, data: Buffer | string, callback: (err: Error | undefined) => void): void;
+  stat(path: string, callback: (err: Error | undefined, stats?: { isDirectory: () => boolean; size: number }) => void): void;
 }
 
 export type SshClientFactory = () => SshClientLike;

@@ -15,6 +15,7 @@ export * as echo from './echo';
 export * as twinrent from './twinrent';
 export * as editor from './editor';
 export * as models from './model-manager';
+export * as remote from './remote';
 export * as semantic from './semantic';
 export * as composer from './composer';
 export * as git from './git';

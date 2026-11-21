@@ -179,6 +179,7 @@ contextBridge.exposeInMainWorld('jewbot', {
   gitRun: (payload: { action: string; args?: string[]; executionId?: string }) => ipcRenderer.invoke('jewbot:gitRun', payload),
   gitConfirm: (payload: { action: 'push' | 'reset' | 'clean'; args?: string[] }) => ipcRenderer.invoke('jewbot:gitConfirm', payload),
   gitSuggest: () => ipcRenderer.invoke('jewbot:gitSuggest') as Promise<{ message: string; error?: string }>,
+  remoteOpen: (payload: { host: string; root: string }) => ipcRenderer.invoke('jewbot:remoteOpen', payload) as Promise<{ host: string; root: string }>,
   editorList: (rel?: string) => ipcRenderer.invoke('jewbot:editorList', rel) as Promise<string[]>,
   editorOpen: (rel: string) =>
     ipcRenderer.invoke('jewbot:editorOpen', rel) as Promise<{
