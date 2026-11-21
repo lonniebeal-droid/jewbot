@@ -144,6 +144,20 @@ declare global {
         active: string | null;
         labels: string[];
       }>;
+      editorInline: (payload: { path: string; fileText: string; selection: string; prompt: string }) => Promise<{
+        path: string;
+        original: string;
+        proposed: string;
+        unifiedDiff: string;
+        replacement: string;
+      }>;
+      editorInlineAccept: (proposal: {
+        path: string;
+        original: string;
+        proposed: string;
+        unifiedDiff: string;
+        replacement: string;
+      }) => Promise<{ ok: boolean; path: string }>;
       editorComplete: (payload: { prefix: string; suffix: string }) => Promise<{ disabled: boolean; ghost: string }>;
       editorSave: (rel: string) => Promise<{ kind: 'clean' | 'saved' | 'review'; path: string; preview?: { unifiedDiff: string } }>;
       editorAccept: (rel: string) => Promise<{ ok: boolean; path: string }>;

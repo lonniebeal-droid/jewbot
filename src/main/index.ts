@@ -16,7 +16,8 @@ import {
   SshStartResult,
 } from '../modules/ssh';
 import { FileWorkspace } from '../modules/files';
-import { completeInline, EditorSession, tabLabel } from '../modules/editor';
+import { acceptInline, completeInline, EditorSession, proposeInlineEdit, tabLabel } from '../modules/editor';
+import type { InlineProposal } from '../modules/editor';
 import { ContextIndexer } from '../modules/context';
 import { AgentLoop, AgentStreamEvent, DestructiveConfirmRequest, EditConfirmRequest } from '../modules/agent';
 import { CascadeAgentOutcome, CascadeRunner, CascadeTask } from '../modules/cascade';
@@ -582,6 +583,24 @@ app.whenReady().then(async () => {
   ipcMain.handle('jewbot:editorComplete', async (_e, payload: { prefix?: string; suffix?: string }) => {
     const text = await completeInline(String(payload?.prefix ?? ''), String(payload?.suffix ?? ''));
     return { disabled: text === null, ghost: text || '' };
+  });
+
+  ipcMain.handle('jewbot:editorInline', async (_e, payload: { path?: string; fileText?: string; selection?: string; prompt?: string }) => {
+    return proposeInlineEdit({
+      path: String(payload?.path ?? ''),
+      fileText: String(payload?.fileText ?? ''),
+      selection: String(payload?.selection ?? ''),
+      prompt: String(payload?.prompt ?? ''),
+    });
+  });
+
+  ipcMain.handle('jewbot:editorInlineAccept', async (_e, proposal: InlineProposal) => {
+    await acceptInline(files, proposal);
+    const tab = editorSession.open(proposal.path, proposal.proposed);
+    editorSession.editHuman(proposal.path, proposal.proposed);
+    tab.savedText = proposal.proposed;
+    tab.dirty = false;
+    return { ok: true, path: proposal.path, labels: editorSession.labels() };
   });
 
   ipcMain.handle('jewbot:editorSave', async (_e, rel: string) => editorSession.save(String(rel ?? ''), files));

@@ -180,6 +180,21 @@ contextBridge.exposeInMainWorld('jewbot', {
       active: string | null;
       labels: string[];
     }>,
+  editorInline: (payload: { path: string; fileText: string; selection: string; prompt: string }) =>
+    ipcRenderer.invoke('jewbot:editorInline', payload) as Promise<{
+      path: string;
+      original: string;
+      proposed: string;
+      unifiedDiff: string;
+      replacement: string;
+    }>,
+  editorInlineAccept: (proposal: {
+    path: string;
+    original: string;
+    proposed: string;
+    unifiedDiff: string;
+    replacement: string;
+  }) => ipcRenderer.invoke('jewbot:editorInlineAccept', proposal) as Promise<{ ok: boolean; path: string }>,
   editorComplete: (payload: { prefix: string; suffix: string }) =>
     ipcRenderer.invoke('jewbot:editorComplete', payload) as Promise<{ disabled: boolean; ghost: string }>,
   editorSave: (rel: string) =>

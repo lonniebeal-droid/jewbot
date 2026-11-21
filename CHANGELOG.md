@@ -2,6 +2,12 @@
 
 All notable changes to Jewbot are listed here. The packaged app version comes from `package.json`.
 
+## 0.3.0 (unreleased)
+
+### Window wiring
+
+- Ctrl/Cmd+K in the editor asks local Ollama for an inline edit and shows Accept / Reject.
+
 ## 0.2.0 — 2026-11-21
 
 Cursor-parity editor work on local Ollama only. Installers stay unsigned. This changelog does not push a git tag.
