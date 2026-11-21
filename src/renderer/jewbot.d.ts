@@ -129,6 +129,23 @@ declare global {
       cascadeStop: () => Promise<{ runState?: string }>;
       cascadeRequeue: (id: string) => Promise<{ ok: boolean; reason?: string }>;
       cascadeRemove: (id: string) => Promise<{ ok: boolean; reason?: string }>;
+      editorList: (rel?: string) => Promise<string[]>;
+      editorOpen: (rel: string) => Promise<{
+        text: string;
+        dirty: boolean;
+        origin: 'human' | 'agent';
+        active: string | null;
+        labels: string[];
+      }>;
+      editorEdit: (payload: { path: string; text: string }) => Promise<{
+        dirty: boolean;
+        label: string;
+        origin: 'human' | 'agent';
+        active: string | null;
+        labels: string[];
+      }>;
+      editorSave: (rel: string) => Promise<{ kind: 'clean' | 'saved' | 'review'; path: string; preview?: { unifiedDiff: string } }>;
+      editorAccept: (rel: string) => Promise<{ ok: boolean; path: string }>;
       modulesList: () => Promise<
         Array<{
           id: string;

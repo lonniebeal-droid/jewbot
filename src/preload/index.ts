@@ -163,6 +163,26 @@ contextBridge.exposeInMainWorld('jewbot', {
     ipcRenderer.on('jewbot:cascadeEvent', listener);
     return () => ipcRenderer.removeListener('jewbot:cascadeEvent', listener);
   },
+  editorList: (rel?: string) => ipcRenderer.invoke('jewbot:editorList', rel) as Promise<string[]>,
+  editorOpen: (rel: string) =>
+    ipcRenderer.invoke('jewbot:editorOpen', rel) as Promise<{
+      text: string;
+      dirty: boolean;
+      origin: 'human' | 'agent';
+      active: string | null;
+      labels: string[];
+    }>,
+  editorEdit: (payload: { path: string; text: string }) =>
+    ipcRenderer.invoke('jewbot:editorEdit', payload) as Promise<{
+      dirty: boolean;
+      label: string;
+      origin: 'human' | 'agent';
+      active: string | null;
+      labels: string[];
+    }>,
+  editorSave: (rel: string) =>
+    ipcRenderer.invoke('jewbot:editorSave', rel) as Promise<{ kind: 'clean' | 'saved' | 'review'; path: string; preview?: { unifiedDiff: string } }>,
+  editorAccept: (rel: string) => ipcRenderer.invoke('jewbot:editorAccept', rel) as Promise<{ ok: boolean; path: string }>,
   modulesList: () =>
     ipcRenderer.invoke('jewbot:modules') as Promise<
       Array<{
