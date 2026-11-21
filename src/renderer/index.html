@@ -121,6 +121,7 @@
         <h3 style="margin:0">Chat</h3>
         <button class="secondary mode active" id="modeAgent" type="button">Agent</button>
         <button class="secondary mode" id="modeChat" type="button">Chat</button>
+        <button class="secondary" id="fixTests" type="button">Fix tests</button>
         <span class="muted" id="phase"></span>
       </div>
       <p class="muted" id="hint">Agent can list, search, read, and edit files in this project, and run commands on allowlisted SSH hosts. A compact tree is included; the whole repo is not. Edits show a diff and apply only after Accept. Destructive commands ask first.</p>
@@ -128,7 +129,7 @@
       <div class="composer">
         <textarea id="goal" rows="2" placeholder="Ask Jewbot…  (Enter to send, Shift+Enter for newline)"></textarea>
         <button id="send" type="button">Send</button>
-        <button class="secondary" id="stop" type="button" disabled>Stop</button>
+        <button class="secondary" id="stop" type="button" disabled title="Stop the agent">Stop</button>
       </div>
     </div>
     <div class="panel side">
