@@ -129,6 +129,8 @@ declare global {
       cascadeStop: () => Promise<{ runState?: string }>;
       cascadeRequeue: (id: string) => Promise<{ ok: boolean; reason?: string }>;
       cascadeRemove: (id: string) => Promise<{ ok: boolean; reason?: string }>;
+      rulesGet: () => Promise<{ enabled: boolean; text: string }>;
+      rulesSet: (enabled: boolean) => Promise<{ enabled: boolean }>;
       modelsList: (host: string) => Promise<{ models: string[]; error?: string }>;
       modelsPull: (payload: { host: string; name: string }) => Promise<{ ok: boolean; error?: string }>;
       modelsDelete: (payload: { host: string; name: string }) => Promise<{ ok: boolean; needsConfirmation?: boolean; error?: string }>;

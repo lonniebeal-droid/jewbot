@@ -241,6 +241,11 @@ async function refresh() {
     if (window.jewbot.cascadeList) renderCascade(await window.jewbot.cascadeList());
     await refreshSsh();
     await refreshModules();
+    if (window.jewbot.rulesGet) {
+      const rules = await window.jewbot.rulesGet();
+      const box = document.getElementById('rulesEnabled');
+      if (box) box.checked = rules.enabled !== false;
+    }
   } catch (e) {
     statusEl.textContent = String(e);
   }
@@ -901,10 +906,6 @@ async function send() {
     return;
   }
   let text = typed;
-  const fixBtn = document.getElementById('fixTests');
-  if (fixBtn && fixBtn.classList.contains('active') && mode === 'agent' && !/^fix tests:/i.test(text)) {
-    text = `fix tests: npm test\n${text}`;
-  }
   if (window.jewbot.expandMentions) {
     try {
       const expanded = await window.jewbot.expandMentions(typed);
@@ -912,6 +913,10 @@ async function send() {
     } catch (err) {
       addMessage('error', err instanceof Error ? err.message : String(err));
     }
+  }
+  const fixBtn = document.getElementById('fixTests');
+  if (fixBtn && fixBtn.classList.contains('active') && mode === 'agent' && !/^fix tests:/i.test(text)) {
+    text = `fix tests: npm test\n${text}`;
   }
   goalEl.value = '';
   addMessage('user', text);
@@ -936,6 +941,10 @@ document.getElementById('stop').onclick = () => {
 };
 document.getElementById('fixTests').onclick = () => {
   document.getElementById('fixTests').classList.toggle('active');
+};
+document.getElementById('rulesEnabled').onchange = () => {
+  const box = document.getElementById('rulesEnabled');
+  if (window.jewbot.rulesSet) void window.jewbot.rulesSet(box.checked);
 };
 document.getElementById('modeAgent').onclick = () => setMode('agent');
 document.getElementById('modeChat').onclick = () => setMode('chat');

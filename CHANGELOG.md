@@ -2,7 +2,9 @@
 
 All notable changes to Jewbot are listed here. The packaged app version comes from `package.json`.
 
-## 0.3.0 (unreleased)
+## 0.3.0 — 2026-11-21
+
+Remote workspace, the agent loop, local model choice, and project rules. Installers stay unsigned. This changelog does not push a git tag.
 
 ### M15 — Remote SSH workspace
 
@@ -22,6 +24,11 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 - List and pull models on a local or LAN Ollama host. Public hosts are refused.
 - Delete uses the confirm grant. The window asks before the grant is minted.
 - Chat, autocomplete, embeddings, and inline edit read their model from `~/.jewbot/settings.json` when that file sets one. An env override still wins. Other keys in the file are left in place.
+
+### M18 — Rules
+
+- `.jewbot/rules.md` and a `rules.md` in the active folder and its parents are added to the agent system prompt.
+- The Rules checkbox writes `rules` in `~/.jewbot/settings.json`. Off means those files stay out of the prompt. Missing settings leave rules on. Other keys in the file stay put.
 
 ### Window wiring
 

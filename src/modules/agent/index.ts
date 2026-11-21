@@ -28,6 +28,7 @@ import {
 } from '../music-release';
 import { formatSshObservation, HostKeyPrompt, SecretPrompt, SshExecResult, SshManager } from '../ssh';
 import { ContextIndexer, formatFindResult, formatSearchResult } from '../context';
+import { systemWithRules } from '../rules';
 import { checkShellCommand, issueConfirmation } from '../safety';
 
 export type AgentStatus = 'idle' | 'planning' | 'acting' | 'observing' | 'done' | 'blocked';
@@ -247,7 +248,7 @@ export class AgentLoop {
     }
 
     const messages: ChatMessage[] = [
-      { role: 'system', content: SYSTEM },
+      { role: 'system', content: systemWithRules(SYSTEM, this.deps.files.projectRoot) },
       {
         role: 'user',
         content: `${turnContext}\n\nGoal:\n${goal}`,

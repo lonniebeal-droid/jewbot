@@ -19,6 +19,7 @@ import { FileWorkspace } from '../modules/files';
 import { acceptInline, completeInline, EditorSession, proposeInlineEdit, tabLabel } from '../modules/editor';
 import { expandMentions } from '../modules/semantic';
 import { deleteLocalModel, listLocalModels, pullLocalModel, loadSettings, saveFeatureModels } from '../modules/model-manager';
+import { loadRules, rulesEnabled, setRulesEnabled } from '../modules/rules';
 import { ComposerBatch } from '../modules/composer';
 import { assertAllowlisted, RemoteWorkspace } from '../modules/remote';
 import { workspaceFromClient } from '../modules/remote/live';
@@ -413,8 +414,8 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
       report.hasBridge &&
       report.missing.length === 0 &&
       report.milestone === 'M7' &&
-      report.version === '0.2.0' &&
-      (report.aboutText || '').includes('0.2.0') &&
+      report.version === '0.3.0' &&
+      (report.aboutText || '').includes('0.3.0') &&
       (report.aboutText || '').includes('unsigned') &&
       !!report.projectRoot &&
       report.sendEnabled &&
@@ -654,6 +655,13 @@ app.whenReady().then(async () => {
     } catch (err) {
       return { message: '', error: err instanceof Error ? err.message : String(err) };
     }
+  });
+
+  ipcMain.handle('jewbot:rulesGet', async () => ({ enabled: rulesEnabled(), text: loadRules(projectRoot) }));
+
+  ipcMain.handle('jewbot:rulesSet', async (_e, enabled: boolean) => {
+    setRulesEnabled(enabled === true);
+    return { enabled: rulesEnabled() };
   });
 
   ipcMain.handle('jewbot:modelsList', async (_e, host: string) => {
