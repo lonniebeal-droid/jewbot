@@ -2,7 +2,9 @@
 
 All notable changes to Jewbot are listed here. The packaged app version comes from `package.json`.
 
-## 0.3.0 (unreleased)
+## 0.3.0 — 2026-11-21
+
+Remote workspace, the agent loop, local model choice, and project rules. Installers stay unsigned. This changelog does not push a git tag.
 
 ### M15 — Remote SSH workspace
 

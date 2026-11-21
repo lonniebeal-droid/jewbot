@@ -1,6 +1,6 @@
 {
   "name": "jewbot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Open-source Cursor-like IDE agent: local LLMs (Ollama), terminal, SSH, agentic loop — $0 by default",
   "main": "dist/main/index.js",
   "author": "lonniebeal-droid",
