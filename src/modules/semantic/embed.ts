@@ -3,7 +3,7 @@
  * assertLocalSpendOnly runs before the socket opens.
  */
 
-import { featureModel } from '../models/settings';
+import { featureModel } from '../model-manager/settings';
 import { assertLocalSpendOnly } from '../safety';
 import { assertOllamaAllowed } from '../llm/ollama';
 import { assertRoutableOllamaHost } from '../llm/route';

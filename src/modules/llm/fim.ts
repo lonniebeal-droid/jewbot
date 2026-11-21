@@ -4,7 +4,7 @@
  * are refused even when JEWBOT_ALLOW_PAID=1.
  */
 
-import { featureModel } from '../models/settings';
+import { featureModel } from '../model-manager/settings';
 import { assertLocalSpendOnly } from '../safety';
 import { assertOllamaAllowed } from './ollama';
 import { assertRoutableOllamaHost } from './route';

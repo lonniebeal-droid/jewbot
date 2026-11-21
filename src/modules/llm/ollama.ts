@@ -8,7 +8,7 @@
  * `assertLocalSpendOnly` from safety.
  */
 
-import { featureModel } from '../models/settings';
+import { featureModel } from '../model-manager/settings';
 import { assertLocalSpendOnly } from '../safety';
 
 export interface ChatMessage {

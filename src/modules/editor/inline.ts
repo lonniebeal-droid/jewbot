@@ -5,7 +5,7 @@
 
 import { createTwoFilesPatch } from 'diff';
 import type { FileWorkspace } from '../files';
-import { featureModel } from '../models/settings';
+import { featureModel } from '../model-manager/settings';
 import { assertLocalSpendOnly } from '../safety';
 import { chatOnce } from '../llm/ollama';
 import { assertRoutableOllamaHost } from '../llm/route';

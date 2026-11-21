@@ -18,7 +18,7 @@ import {
 import { FileWorkspace } from '../modules/files';
 import { acceptInline, completeInline, EditorSession, proposeInlineEdit, tabLabel } from '../modules/editor';
 import { expandMentions } from '../modules/semantic';
-import { deleteLocalModel, listLocalModels, pullLocalModel, loadSettings, saveFeatureModels } from '../modules/models';
+import { deleteLocalModel, listLocalModels, pullLocalModel, loadSettings, saveFeatureModels } from '../modules/model-manager';
 import { ComposerBatch } from '../modules/composer';
 import { renderGitCommand, runGit, suggestCommitMessage, type GitAction } from '../modules/git';
 import type { InlineProposal } from '../modules/editor';

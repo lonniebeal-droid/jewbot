@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { completionModel } from '../src/modules/llm/fim';
-import { deleteLocalModel, featureModel, listLocalModels, pullLocalModel, saveFeatureModels } from '../src/modules/models';
+import { deleteLocalModel, featureModel, listLocalModels, pullLocalModel, saveFeatureModels } from '../src/modules/model-manager';
 import { issueConfirmation } from '../src/modules/safety';
 
 function expect(cond: boolean, msg: string) {
