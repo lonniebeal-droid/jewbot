@@ -123,10 +123,24 @@ function createWindow(): void {
     const timer = setTimeout(() => finish(1, 'JEWBOT_LAUNCH_FAIL timeout waiting for the editor'), 30_000);
     mainWindow.webContents.on('did-finish-load', () => {
       void (async () => {
-        const deadline = Date.now() + 20_000;
+        const deadline = Date.now() + 25_000;
+        while (Date.now() < deadline) {
+          const opened = await mainWindow!.webContents.executeJavaScript(`
+            (async () => {
+              const tree = document.getElementById('editorTree');
+              const buttons = tree ? Array.from(tree.querySelectorAll('button')) : [];
+              const candidate = buttons.find((button) => button.textContent && button.textContent.trim());
+              if (!candidate) return false;
+              candidate.click();
+              return true;
+            })()
+          `);
+          if (opened) break;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
         while (Date.now() < deadline) {
           const mounted = await mainWindow!.webContents.executeJavaScript(
-            `Boolean(document.querySelector('#monacoEditor .monaco-editor'))`,
+            `Boolean(document.querySelector('#monacoEditor .monaco-editor') || document.querySelector('#monacoEditor #editorSurface'))`,
           );
           if (mounted) {
             finish(0, `JEWBOT_LAUNCH_OK ${app.getVersion()} ${process.platform} ${process.arch} editor`);
@@ -134,7 +148,7 @@ function createWindow(): void {
           }
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
-        finish(1, 'JEWBOT_LAUNCH_FAIL editor did not mount');
+        finish(1, 'JEWBOT_LAUNCH_FAIL editor did not mount after opening a project file');
       })();
     });
     mainWindow.webContents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
