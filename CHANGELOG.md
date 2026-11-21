@@ -24,6 +24,12 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 - Re-index skips unchanged files and paths ignored the same way as M4 (`.gitignore`, `node_modules`, `dist`, `.git`, secrets).
 - Agent tool `semantic_search`. Chat mentions `@file`, `@folder`, and `@codebase` expand locally.
 
+### M12 — Composer
+
+- Multi-file agent edits land in one review batch.
+- Accept or reject a whole file or one hunk.
+- Apply writes only the accepted text. One undo restores every file in that apply.
+
 ## 0.1.0 — 2026-11-10
 
 First installable build. Milestones M0 through M7, plus the local modules and LAN routing below. Installers are unsigned. Code signing and Apple notarization are off because they cost money. That stays an owner decision. Spend stays $0.
