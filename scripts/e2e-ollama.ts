@@ -39,8 +39,8 @@ async function main() {
   const middle = await generateFim({
     host: HOST,
     model: CHAT_MODEL,
-    prompt: 'function add(a, b) {\\n  return ',
-    suffix: ';\\n}\\n',
+    prompt: 'function add(a, b) {\n  return ',
+    suffix: ';\n}\n',
   });
   expect(middle.trim().length > 0, 'FIM returned an empty completion');
 
@@ -48,8 +48,10 @@ async function main() {
   expect(Array.isArray(vector) && vector.length > 8, 'embed call did not return a vector');
 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jewbot-e2e-'));
-  const check = "const fs=require('fs');const t=fs.readFileSync('hello.txt','utf8');if(t!=='hello jewbot\\n')process.exit(1);console.log('e2e-ok');\\n";
-  await fs.writeFile(path.join(root, 'check.js'), check);
+  await fs.writeFile(
+    path.join(root, 'check.js'),
+    "const fs=require('fs');const t=fs.readFileSync('hello.txt','utf8');if(t!=='hello jewbot\\n')process.exit(1);console.log('e2e-ok');\n",
+  );
   const files = new FileWorkspace(root);
   const context = new ContextIndexer(root);
   const goal = [
@@ -59,17 +61,14 @@ async function main() {
     '3. Call run_terminal with the exact command: node check.js',
     'Wait for the terminal observation. It must contain e2e-ok.',
     'Only then reply with FINAL: done. Do not claim success without the terminal observation.',
-  ].join('\\n');
+  ].join('\n');
 
-  let sawRead = false;
-  let accepted = false;
-  let sawTest = false;
+  let passed = false;
   let last = '';
   try {
-    for (let attempt = 1; attempt <= 4 && !(sawRead && accepted && sawTest); attempt += 1) {
-      // Each retry starts from the same fixture so it must perform the full
-      // read -> proposed edit -> accepted edit -> terminal flow again.
-      await fs.writeFile(path.join(root, 'hello.txt'), 'hello\\n');
+    for (let attempt = 1; attempt <= 4 && !passed; attempt += 1) {
+      await fs.writeFile(path.join(root, 'hello.txt'), 'hello\n');
+      let acceptedThisRun = false;
       const agent = new AgentLoop({
         files,
         terminal: defaultTerminal,
@@ -80,26 +79,20 @@ async function main() {
         toolRetries: 3,
         confirmEdit: async (req) => {
           const ok = req.unifiedDiff.includes('hello jewbot');
-          if (ok) accepted = true;
+          if (ok) acceptedThisRun = true;
           return ok;
         },
       });
       const result = await agent.run(goal);
-      last = `attempt ${attempt}: ${result.status} ${result.blockReason ?? ''} ${result.finalText ?? ''}`;
-      for (const step of result.steps) {
-        if (step.tool?.name === 'read_file') sawRead = true;
-        if (step.tool?.name === 'run_terminal' && (step.observation || '').includes('e2e-ok')) sawTest = true;
-      }
+      const sawRead = result.steps.some((step) => step.tool?.name === 'read_file');
+      const sawTest = result.steps.some(
+        (step) => step.tool?.name === 'run_terminal' && (step.observation || '').includes('e2e-ok'),
+      );
       const body = await fs.readFile(path.join(root, 'hello.txt'), 'utf8');
-      if (body !== 'hello jewbot\\n') accepted = false;
+      passed = result.status === 'done' && sawRead && acceptedThisRun && sawTest && body === 'hello jewbot\n';
+      last = `attempt ${attempt}: status=${result.status} read=${sawRead} accepted=${acceptedThisRun} test=${sawTest} bodyOk=${body === 'hello jewbot\n'} reason=${result.blockReason ?? ''}`;
     }
-    expect(sawRead, `agent did not read hello.txt (${last})`);
-    expect(accepted, `Accept did not write hello.txt (${last})`);
-    expect((await fs.readFile(path.join(root, 'hello.txt'), 'utf8')) === 'hello jewbot\\n', 'file was not updated');
-    expect(
-      sawTest,
-      'the agent did not successfully invoke node check.js through AgentLoop; direct terminal fallback is not accepted',
-    );
+    expect(passed, `AgentLoop acceptance did not complete the full read -> accepted edit -> terminal test sequence (${last})`);
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
