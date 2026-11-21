@@ -914,6 +914,10 @@ async function send() {
       addMessage('error', err instanceof Error ? err.message : String(err));
     }
   }
+  const fixBtn = document.getElementById('fixTests');
+  if (fixBtn && fixBtn.classList.contains('active') && mode === 'agent' && !/^fix tests:/i.test(text)) {
+    text = `fix tests: npm test\n${text}`;
+  }
   goalEl.value = '';
   addMessage('user', text);
   beginAssistant();
@@ -934,6 +938,9 @@ document.getElementById('send').onclick = send;
 document.getElementById('stop').onclick = () => {
   if (activeRequest && window.jewbot) window.jewbot.cancelStream(activeRequest);
   if (window.jewbot && window.jewbot.cascadeStop) void window.jewbot.cascadeStop();
+};
+document.getElementById('fixTests').onclick = () => {
+  document.getElementById('fixTests').classList.toggle('active');
 };
 document.getElementById('rulesEnabled').onchange = () => {
   const box = document.getElementById('rulesEnabled');

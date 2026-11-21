@@ -97,6 +97,8 @@ export interface AgentDeps {
   context: ContextIndexer;
   llm?: OllamaConfig;
   maxSteps?: number;
+  /** Extra model turns when a tool call is not valid JSON. Defaults to 2. */
+  toolRetries?: number;
   /**
    * Human gate for destructive `run_terminal` commands.
    * Missing callback or a false result means the command is not executed.
@@ -216,8 +218,23 @@ export class AgentLoop {
     }
 
     const steps: AgentStep[] = [];
-    const maxSteps = this.deps.maxSteps ?? 12;
+    const maxSteps = stepBudget(this.deps.maxSteps);
     const cfg = this.deps.llm ?? defaultOllamaConfig();
+    let retriesLeft = this.deps.toolRetries ?? 2;
+
+    const fix = parseFixTests(goal);
+    if (fix) {
+      const observation = yield* this.observeTerminal({ name: 'run_terminal', args: { command: fix.command } }, signal);
+      yield { type: 'tool_result', name: 'run_terminal', args: { command: fix.command }, observation };
+      if (observation.startsWith('BLOCKED:') || observation.startsWith('ERROR:') || signal?.aborted) {
+        const reason = signal?.aborted ? 'Cancelled' : observation;
+        const result: AgentRunResult = { status: 'blocked', steps, blockReason: reason };
+        yield { type: 'error', message: reason };
+        yield finish(result);
+        return;
+      }
+      goal = `${fix.note}\n\nTest command: ${fix.command}\nTest output:\n${observation}\nFix the failures with tools. When the goal is satisfied, reply FINAL:.`;
+    }
 
     let turnContext: string;
     try {
@@ -275,7 +292,18 @@ export class AgentLoop {
         return;
       }
 
-      const tool = parseToolCall(reply);
+      const kind = toolReplyKind(reply);
+      if (kind === 'invalid' && retriesLeft > 0) {
+        retriesLeft -= 1;
+        messages.push({ role: 'assistant', content: reply });
+        messages.push({
+          role: 'user',
+          content: 'That tool call was not valid JSON. Reply with one JSON object {"tool":"…","args":{…}} or a line starting with FINAL:.',
+        });
+        n -= 1;
+        continue;
+      }
+      const tool = kind === 'tool' ? parseToolCall(reply) : null;
       if (!tool) {
         messages.push({ role: 'assistant', content: reply });
         messages.push({
@@ -285,6 +313,7 @@ export class AgentLoop {
         steps.push({ n, thought: reply });
         continue;
       }
+      retriesLeft = this.deps.toolRetries ?? 2;
 
       this.status = 'acting';
       yield { type: 'status', status: 'acting' };
@@ -799,6 +828,40 @@ export function specFromArgs(args: Record<string, unknown>): EditSpec {
   }
   if (content === undefined) throw new Error('Edit needs content or search text');
   return { content };
+}
+
+export function stepBudget(explicit?: number): number {
+  if (typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
+  const fromEnv = Number(process.env.JEWBOT_AGENT_MAX_STEPS);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return Math.floor(fromEnv);
+  return 12;
+}
+
+/** A goal that starts with "fix tests: <command>" runs that command before the loop. */
+export function parseFixTests(goal: string): { command: string; note: string } | null {
+  const match = goal.match(/^fix tests:\s*([^\n]+)/i);
+  if (!match) return null;
+  const command = match[1].split('\n')[0].trim();
+  if (!command) return null;
+  return { command, note: goal };
+}
+
+export function toolReplyKind(text: string): 'tool' | 'invalid' | 'none' {
+  if (parseToolCall(text)) return 'tool';
+  const fenceRe = /```(?:json)?\s*([\s\S]*?)```/gi;
+  let fence: RegExpExecArray | null;
+  while ((fence = fenceRe.exec(text))) {
+    const body = fence[1].trim();
+    if (body.startsWith('{')) {
+      try {
+        JSON.parse(body);
+      } catch {
+        return 'invalid';
+      }
+    }
+  }
+  if (/"tool"\s*:/.test(text) && text.includes('{')) return 'invalid';
+  return 'none';
 }
 
 export function parseToolCall(text: string): AgentToolCall | null {

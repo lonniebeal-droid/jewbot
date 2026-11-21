@@ -124,6 +124,7 @@
         <h3 style="margin:0">Chat</h3>
         <button class="secondary mode active" id="modeAgent" type="button">Agent</button>
         <button class="secondary mode" id="modeChat" type="button">Chat</button>
+        <button class="secondary" id="fixTests" type="button">Fix tests</button>
         <label class="muted"><input id="rulesEnabled" type="checkbox" checked /> Rules</label>
         <span class="muted" id="phase"></span>
       </div>
@@ -132,7 +133,7 @@
       <div class="composer">
         <textarea id="goal" rows="2" placeholder="Ask Jewbot…  (Enter to send, Shift+Enter for newline)"></textarea>
         <button id="send" type="button">Send</button>
-        <button class="secondary" id="stop" type="button" disabled>Stop</button>
+        <button class="secondary" id="stop" type="button" disabled title="Stop the agent">Stop</button>
       </div>
     </div>
     <div class="panel side">
