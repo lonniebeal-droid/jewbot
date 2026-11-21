@@ -61,23 +61,17 @@ async function main() {
 const { Buffer } = require('buffer');
 let buf = Buffer.alloc(0);
 function frame(obj) {
-  const body = Buffer.from(JSON.stringify(obj));
-  process.stdout.write('Content-Length: ' + body.length + '\\r\\n\\r\\n');
-  process.stdout.write(body);
+  process.stdout.write(JSON.stringify(obj) + '\\n');
 }
 process.stdin.on('data', (chunk) => {
   buf = Buffer.concat([buf, chunk]);
   while (true) {
-    const end = buf.indexOf('\\r\\n\\r\\n');
-    if (end < 0) return;
-    const header = buf.slice(0, end).toString('utf8');
-    const match = /Content-Length:\\s*(\\d+)/i.exec(header);
-    if (!match) { buf = buf.slice(end + 4); continue; }
-    const length = Number(match[1]);
-    const start = end + 4;
-    if (buf.length < start + length) return;
-    const msg = JSON.parse(buf.slice(start, start + length).toString('utf8'));
-    buf = buf.slice(start + length);
+    const nl = buf.indexOf('\\n');
+    if (nl < 0) return;
+    const line = buf.slice(0, nl).toString('utf8').trim();
+    buf = buf.slice(nl + 1);
+    if (!line) continue;
+    const msg = JSON.parse(line);
     if (msg.method === 'initialize') frame({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: '2024-11-05' } });
     else if (msg.method === 'tools/call') frame({ jsonrpc: '2.0', id: msg.id, result: { content: [{ text: 'stdio-pong' }] } });
   }
