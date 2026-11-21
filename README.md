@@ -4,7 +4,7 @@
 
 Terminal control, SSH to your machines (Dell / Pi / Mac), agentic plan→act→observe loop, file edits with diff preview, project-aware context, and cascade execution across milestones.
 
-> **Status:** Milestone **M7** (this branch) — unsigned installers for macOS (Apple silicon and Intel), Linux AppImage and deb (x64 for a Dell, arm64 for a Raspberry Pi), and Windows NSIS (x64). Code signing and notarization are **off** (they cost money; that is an owner decision). Milestone **M8** (module hub) is already on main: other bots register under Jewbot and use local Ollama. Cascade (M6) and the Muse finisher stay as they are.
+> **Status:** **0.5.0**. Unsigned installers for macOS (Apple silicon and Intel), Linux AppImage and deb (x64 for a Dell, arm64 for a Raspberry Pi), and Windows NSIS (x64). Code signing and notarization are **off**. The app stays on local Ollama. A `v*` tag only creates a draft release.
 
 ## Why Jewbot?
 
@@ -49,7 +49,7 @@ npm run rebuild:native
 
 ### macOS (Apple silicon and Intel)
 
-Artifacts: `Jewbot-0.1.0-mac-arm64.dmg` and `Jewbot-0.1.0-mac-arm64.zip`, plus the same names with `x64`.
+Artifacts: `Jewbot-0.5.0-mac-arm64.dmg` and `Jewbot-0.5.0-mac-arm64.zip`, plus the same names with `x64`.
 
 1. Open the dmg and drag Jewbot to Applications, or unzip the zip.
 2. First launch: right-click the app, choose **Open**, then **Open** again. Or, after copying it out of the dmg:
@@ -62,32 +62,32 @@ Notarization is off, so macOS will not have a notarization ticket.
 
 ### Windows (x64, including a Dell)
 
-Artifact: `Jewbot-0.1.0-win-x64.exe` (NSIS). Run the installer. If SmartScreen says it protected your PC, choose **More info**, then **Run anyway**. The installer is per-user and lets you pick a folder. There is no Authenticode signature.
+Artifact: `Jewbot-0.5.0-win-x64.exe` (NSIS). Run the installer. If SmartScreen says it protected your PC, choose **More info**, then **Run anyway**. The installer is per-user and lets you pick a folder. There is no Authenticode signature.
 
 ### Linux (x64, including a Dell)
 
 electron-builder names these with the distro arch, not `x64`:
 
-- `Jewbot-0.1.0-linux-x86_64.AppImage`
-- `Jewbot-0.1.0-linux-amd64.deb`
+- `Jewbot-0.5.0-linux-x86_64.AppImage`
+- `Jewbot-0.5.0-linux-amd64.deb`
 
 ```bash
-chmod +x Jewbot-0.1.0-linux-x86_64.AppImage
-./Jewbot-0.1.0-linux-x86_64.AppImage
+chmod +x Jewbot-0.5.0-linux-x86_64.AppImage
+./Jewbot-0.5.0-linux-x86_64.AppImage
 ```
 
-If the AppImage cannot mount itself, install FUSE (`sudo apt install libfuse2`) or run `./Jewbot-0.1.0-linux-x86_64.AppImage --appimage-extract-and-run`.
+If the AppImage cannot mount itself, install FUSE (`sudo apt install libfuse2`) or run `./Jewbot-0.5.0-linux-x86_64.AppImage --appimage-extract-and-run`.
 
 Debian or Ubuntu:
 
 ```bash
-sudo apt install ./Jewbot-0.1.0-linux-amd64.deb
+sudo apt install ./Jewbot-0.5.0-linux-amd64.deb
 jewbot
 ```
 
 ### Raspberry Pi (64-bit, linux arm64)
 
-Use a 64-bit Raspberry Pi OS. The 32-bit image is not a build target. Artifacts: `Jewbot-0.1.0-linux-arm64.AppImage` and `Jewbot-0.1.0-linux-arm64.deb` (same install steps as Linux above). On the Pi itself, `npm run dist:linux` builds the arm64 packages.
+Use a 64-bit Raspberry Pi OS. The 32-bit image is not a build target. Artifacts: `Jewbot-0.5.0-linux-arm64.AppImage` and `Jewbot-0.5.0-linux-arm64.deb` (same install steps as Linux above). On the Pi itself, `npm run dist:linux` builds the arm64 packages.
 
 Install Ollama, then pull a **small** model. A 7B model is a poor fit for a Pi:
 
@@ -106,7 +106,7 @@ JEWBOT_MODEL=qwen2.5-coder:1.5b jewbot
 
 ### Version
 
-The window title, the header badge, and **About** read the version from `package.json` (currently **0.1.0**, milestone M7). A packaged build prints the same line and exits:
+The window title, the header badge, and **About** read the version from `package.json` (currently **0.5.0**). A packaged build prints the same line and exits:
 
 ```bash
 jewbot --jewbot-version
@@ -191,6 +191,34 @@ List SSH hosts, connect to pi, and run uname -a.
 ```
 
 The tools are `ssh_list_hosts`, `ssh_connect`, `ssh_exec`, and `ssh_disconnect`. `ssh_exec` uses the same one-shot confirmation grant as `run_terminal`. The model cannot approve itself, and it cannot connect to a host that is not in the file.
+
+### First run with Ollama
+
+Install Ollama from [ollama.com](https://ollama.com) (the Pi one-liner above is the same official script). Start it, pull a model that fits the machine, and leave paid APIs off:
+
+```bash
+ollama serve
+ollama pull qwen2.5-coder:1.5b
+JEWBOT_MODEL=qwen2.5-coder:1.5b npm start
+```
+
+A desktop can use `qwen2.5-coder:7b`. A Pi should stay on `qwen2.5-coder:1.5b` or `qwen2.5-coder:0.5b`. Jewbot talks to `http://127.0.0.1:11434` unless a LAN host in the registry is healthy. Do not set `JEWBOT_ALLOW_PAID`.
+
+### MCP servers
+
+Local stdio MCP servers live in `~/.jewbot/mcp.json`. A `url`, token, or password field is refused. Each server stays off until you set `"allow": true` for that server. `mcp_call` does not start the process while allow is off. The MCP panel lists what is configured.
+
+```json
+{
+  "servers": [
+    { "name": "local", "command": "node", "args": ["server.js"], "allow": false }
+  ]
+}
+```
+
+### Rules
+
+Put project instructions in `.jewbot/rules.md`. A `rules.md` in a folder is included too. They are added to the agent system prompt. The Rules checkbox writes `rules` in `~/.jewbot/settings.json`. Off keeps those files out of the prompt. Other keys in that file, including per-feature model names, stay put.
 
 ### Edit a file
 
@@ -322,7 +350,16 @@ npm test
 | `JEWBOT_CASCADE_MAX_STEPS` | `8` | Most agent steps one cascade task may take |
 | `JEWBOT_CASCADE_MAX_MS` | `180000` | Wall-time budget for one cascade task, including its acceptance command |
 
-## Safety (always on)
+## Safety gates
+
+These gates stay on. The model cannot satisfy them by setting `approved`, `confirmed`, or an execution id.
+
+- **Spend.** Paid and public LLM hosts are refused. LAN Ollama is only the private ranges and Tailscale `100.64.0.0/10`.
+- **Accept.** A file edit is a diff until you press Accept. Reject writes nothing.
+- **Destructive command.** `rm -rf`, force-push, reset, clean, and the other listed patterns need the confirm dialog. Cancel is the default.
+- **SSH host key.** The first fingerprint, and any change, waits for Trust this key.
+- **MCP allow.** A server's tool calls do not start until that server's allow toggle is on.
+- **Secrets.** `.env` and private keys are not read or written until you confirm that path.
 
 - Paid / cloud LLM calls blocked unless explicitly enabled
 - Destructive patterns (`rm -rf`, `git push --force`, …) require confirmation
