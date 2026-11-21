@@ -14,6 +14,7 @@ export * as musicRelease from './music-release';
 export * as echo from './echo';
 export * as twinrent from './twinrent';
 export * as editor from './editor';
+export * as remote from './remote';
 export * as rules from './rules';
 export * as semantic from './semantic';
 export * as composer from './composer';

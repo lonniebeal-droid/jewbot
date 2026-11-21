@@ -27,7 +27,7 @@ export interface TerminalResult {
   backend: TerminalBackend;
 }
 
-export type TerminalBackend = 'pty' | 'child_process';
+export type TerminalBackend = 'pty' | 'child_process' | 'ssh';
 
 export interface TerminalChunk {
   sessionId: string;

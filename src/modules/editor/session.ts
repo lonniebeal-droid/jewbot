@@ -5,7 +5,12 @@
  * until the owner Accepts, using the same FileWorkspace diff path as M3.
  */
 
-import type { DiffPreview, FileWorkspace } from '../files';
+import type { DiffPreview } from '../files';
+
+export interface EditorStore {
+  proposeEdit(rel: string, proposed: string, opts?: { allowSecret?: boolean }): Promise<DiffPreview>;
+  applyEdit(preview: DiffPreview, confirmed: boolean, opts?: { allowSecret?: boolean }): Promise<void>;
+}
 
 export type BufferOrigin = 'human' | 'agent';
 
@@ -82,7 +87,7 @@ export class EditorSession {
     return tab;
   }
 
-  async save(path: string, files: FileWorkspace): Promise<SaveOutcome> {
+  async save(path: string, files: EditorStore): Promise<SaveOutcome> {
     const tab = this.require(path);
     if (!tab.dirty) return { kind: 'clean', path: tab.path };
     if (tab.origin === 'agent') {
@@ -98,7 +103,7 @@ export class EditorSession {
   }
 
   /** Owner pressed Accept on an agent diff. Writes, then the tab matches disk. */
-  async acceptAgent(path: string, files: FileWorkspace): Promise<EditorTab> {
+  async acceptAgent(path: string, files: EditorStore): Promise<EditorTab> {
     const tab = this.require(path);
     if (tab.origin !== 'agent') throw new Error('This tab is not waiting on an agent diff.');
     const preview = await files.proposeEdit(tab.path, tab.text);
