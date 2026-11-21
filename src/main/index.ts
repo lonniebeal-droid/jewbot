@@ -19,6 +19,9 @@ import { FileWorkspace } from '../modules/files';
 import { acceptInline, completeInline, EditorSession, proposeInlineEdit, tabLabel } from '../modules/editor';
 import { expandMentions } from '../modules/semantic';
 import { ComposerBatch } from '../modules/composer';
+import { assertAllowlisted, RemoteWorkspace } from '../modules/remote';
+import { workspaceFromClient } from '../modules/remote/live';
+import { remoteCommand } from '../modules/remote';
 import { renderGitCommand, runGit, suggestCommitMessage, type GitAction } from '../modules/git';
 import type { InlineProposal } from '../modules/editor';
 import { ContextIndexer } from '../modules/context';
@@ -33,6 +36,7 @@ let safety = defaultSafetyConfig(projectRoot);
 let files = new FileWorkspace(projectRoot);
 let editorSession = new EditorSession();
 let composerBatch = new ComposerBatch();
+let remoteWorkspace: RemoteWorkspace | null = null;
 let context = new ContextIndexer(projectRoot);
 const cascadeStoreRoot =
   process.env.JEWBOT_UI_SMOKE === '1' ? fs.mkdtempSync(path.join(os.tmpdir(), 'jewbot-m6-ui-')) : projectRoot;
@@ -659,10 +663,29 @@ app.whenReady().then(async () => {
     }
   });
 
-  ipcMain.handle('jewbot:editorList', async (_e, rel?: string) => files.listDir(rel || '.'));
+  ipcMain.handle('jewbot:remoteOpen', async (event, payload: { host?: string; root?: string }) => {
+    const host = String(payload?.host ?? '');
+    const root = String(payload?.root ?? '');
+    assertAllowlisted(defaultSshManager.listHosts(), host);
+    await defaultSshManager.connect(host, {
+      confirmHostKey: (prompt) => requestHostKey(event.sender, prompt),
+      promptSecret: (prompt) => requestSecret(event.sender, prompt),
+    });
+    const client = defaultSshManager.clientFor(host);
+    if (!client) throw new Error(`Not connected to ${host}`);
+    remoteWorkspace = await workspaceFromClient(host, root, client);
+    return { host, root };
+  });
+
+  ipcMain.handle('jewbot:remoteClose', async () => {
+    remoteWorkspace = null;
+    return { ok: true };
+  });
+
+  ipcMain.handle('jewbot:editorList', async (_e, rel?: string) => (remoteWorkspace ? remoteWorkspace.listDir(rel || '.') : files.listDir(rel || '.')));
 
   ipcMain.handle('jewbot:editorOpen', async (_e, rel: string) => {
-    const text = await files.read(String(rel ?? ''));
+    const text = remoteWorkspace ? await remoteWorkspace.read(String(rel ?? '')) : await files.read(String(rel ?? ''));
     const tab = editorSession.open(String(rel), text);
     return { text: tab.text, dirty: tab.dirty, origin: tab.origin, active: editorSession.active, labels: editorSession.labels() };
   });
@@ -687,7 +710,12 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('jewbot:editorInlineAccept', async (_e, proposal: InlineProposal) => {
-    await acceptInline(files, proposal);
+    if (remoteWorkspace) {
+      const preview = await remoteWorkspace.proposeEdit(proposal.path, proposal.proposed);
+      await remoteWorkspace.applyEdit(preview, true);
+    } else {
+      await acceptInline(files, proposal);
+    }
     const tab = editorSession.open(proposal.path, proposal.proposed);
     editorSession.editHuman(proposal.path, proposal.proposed);
     tab.savedText = proposal.proposed;
@@ -695,10 +723,10 @@ app.whenReady().then(async () => {
     return { ok: true, path: proposal.path, labels: editorSession.labels() };
   });
 
-  ipcMain.handle('jewbot:editorSave', async (_e, rel: string) => editorSession.save(String(rel ?? ''), files));
+  ipcMain.handle('jewbot:editorSave', async (_e, rel: string) => editorSession.save(String(rel ?? ''), remoteWorkspace ?? files));
 
   ipcMain.handle('jewbot:editorAccept', async (_e, rel: string) => {
-    const tab = await editorSession.acceptAgent(String(rel ?? ''), files);
+    const tab = await editorSession.acceptAgent(String(rel ?? ''), remoteWorkspace ?? files);
     return { ok: true, path: tab.path, labels: editorSession.labels() };
   });
 
@@ -889,6 +917,41 @@ app.whenReady().then(async () => {
   ipcMain.handle('jewbot:terminalStart', async (event, payload: unknown) => {
     const req = asTerminalStart(payload);
     if (!req) return { ok: false, started: false, needsConfirmation: false, reason: 'Invalid terminal request' } satisfies TerminalStartResult;
+    const command = remoteWorkspace ? remoteCommand(remoteWorkspace.root, req.command) : req.command;
+    if (remoteWorkspace) {
+      const preparedRemote = defaultSshManager.prepareExec(command);
+      if (!preparedRemote.ok && !req.executionId) return preparedRemote;
+      const started = defaultSshManager.startExec(remoteWorkspace.host, command, {
+        executionId: req.executionId,
+        onChunk: (chunk) => {
+          if (event.sender.isDestroyed()) return;
+          event.sender.send('jewbot:terminalEvent', {
+            type: 'chunk',
+            sessionId: chunk.execId,
+            stream: chunk.stream,
+            text: chunk.text,
+          });
+        },
+      });
+      void started.done.then(
+        (result) => {
+          if (event.sender.isDestroyed()) return;
+          event.sender.send('jewbot:terminalEvent', {
+            type: 'exit',
+            sessionId: started.execId,
+            exitCode: result.exitCode,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            timedOut: result.timedOut,
+            truncated: result.truncated,
+            killed: result.killed,
+            backend: 'ssh',
+          });
+        },
+        () => undefined,
+      );
+      return { ok: true, started: true, sessionId: started.execId, backend: 'ssh' } satisfies TerminalStartResult;
+    }
     const prepared = defaultTerminal.prepare(req.command);
     if (!prepared.ok && !prepared.needsConfirmation) return prepared;
     if (!prepared.ok && prepared.needsConfirmation && !req.executionId) return prepared;
