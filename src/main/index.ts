@@ -20,6 +20,7 @@ import { acceptInline, completeInline, EditorSession, proposeInlineEdit, tabLabe
 import { expandMentions } from '../modules/semantic';
 import { deleteLocalModel, listLocalModels, pullLocalModel, loadSettings, saveFeatureModels } from '../modules/model-manager';
 import { loadRules, rulesEnabled, setRulesEnabled } from '../modules/rules';
+import { describeServer, loadMcpServers, setServerAllow } from '../modules/mcp';
 import { ComposerBatch } from '../modules/composer';
 import { assertAllowlisted, RemoteWorkspace } from '../modules/remote';
 import { workspaceFromClient } from '../modules/remote/live';
@@ -706,6 +707,23 @@ app.whenReady().then(async () => {
       inlineEdit: payload.models.inlineEdit,
     });
     return { models: saved.models };
+  });
+
+  ipcMain.handle('jewbot:mcpList', async () => {
+    try {
+      return { servers: loadMcpServers().map((server) => ({ name: server.name, allow: server.allow, line: describeServer(server) })) };
+    } catch (err) {
+      return { servers: [], error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('jewbot:mcpAllow', async (_e, payload: { name?: string; allow?: boolean }) => {
+    try {
+      const servers = setServerAllow(String(payload?.name ?? ''), payload?.allow === true);
+      return { ok: true, servers: servers.map((server) => ({ name: server.name, allow: server.allow })) };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('jewbot:expandMentions', async (_e, text: string) => {

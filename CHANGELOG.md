@@ -2,6 +2,14 @@
 
 All notable changes to Jewbot are listed here. The packaged app version comes from `package.json`.
 
+## 0.4.0 (unreleased)
+
+### M19 — MCP client
+
+- Stdio servers come from `~/.jewbot/mcp.json`. A URL, token, or password in that file is refused.
+- `mcp_call` reaches the agent only after that server's allow toggle is on. Off means the process does not start.
+- The MCP panel lists the local servers.
+
 ## 0.3.0 — 2026-11-21
 
 Remote workspace, the agent loop, local model choice, and project rules. Installers stay unsigned. This changelog does not push a git tag.
