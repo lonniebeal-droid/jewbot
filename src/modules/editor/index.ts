@@ -5,6 +5,8 @@
 
 import type { JewbotModule } from '../plugin/types';
 
+export { acceptInline, proposeInlineEdit, rejectInline } from './inline';
+export type { InlineProposal } from './inline';
 export { completeInline, createCompletionController } from './complete';
 export type { CompletionController, GhostState } from './complete';
 export { bindMonaco, MONACO_CONTAINER_ID, MONACO_EDITOR_OPTIONS } from './monaco';
