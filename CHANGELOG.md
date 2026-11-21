@@ -8,6 +8,7 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 
 - Ctrl/Cmd+K in the editor asks local Ollama for an inline edit and shows Accept / Reject.
 - The chat box expands `@file`, `@folder`, and `@codebase` with `expandMentions` before send.
+- The window has a composer panel: add the editor buffer, accept or reject each file or hunk, apply, and undo the batch.
 
 ## 0.2.0 — 2026-11-21
 

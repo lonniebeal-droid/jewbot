@@ -7,7 +7,7 @@ const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const outDir = path.join(root, "dist", "renderer");
-const files = ["index.html", "renderer.js", "editor.js"];
+const files = ["index.html", "renderer.js", "editor.js", "composer.js"];
 
 fs.mkdirSync(outDir, { recursive: true });
 for (const file of files) {

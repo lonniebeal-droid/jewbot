@@ -18,6 +18,7 @@ import {
 import { FileWorkspace } from '../modules/files';
 import { acceptInline, completeInline, EditorSession, proposeInlineEdit, tabLabel } from '../modules/editor';
 import { expandMentions } from '../modules/semantic';
+import { ComposerBatch } from '../modules/composer';
 import type { InlineProposal } from '../modules/editor';
 import { ContextIndexer } from '../modules/context';
 import { AgentLoop, AgentStreamEvent, DestructiveConfirmRequest, EditConfirmRequest } from '../modules/agent';
@@ -30,6 +31,7 @@ let projectRoot = resolveInitialRoot();
 let safety = defaultSafetyConfig(projectRoot);
 let files = new FileWorkspace(projectRoot);
 let editorSession = new EditorSession();
+let composerBatch = new ComposerBatch();
 let context = new ContextIndexer(projectRoot);
 const cascadeStoreRoot =
   process.env.JEWBOT_UI_SMOKE === '1' ? fs.mkdtempSync(path.join(os.tmpdir(), 'jewbot-m6-ui-')) : projectRoot;
@@ -78,6 +80,7 @@ function setProjectRoot(next: string): string {
   safety = defaultSafetyConfig(projectRoot);
   files = new FileWorkspace(projectRoot);
   editorSession = new EditorSession();
+  composerBatch = new ComposerBatch();
   context = new ContextIndexer(projectRoot);
   cascade.setWorkspace({ projectRoot, files, context });
   return projectRoot;
@@ -566,6 +569,56 @@ app.whenReady().then(async () => {
     }
     const next = setProjectRoot(result.filePaths[0]);
     return { canceled: false, projectRoot: next };
+  });
+
+  function composerView() {
+    return {
+      files: composerBatch.files.map((file) => ({
+        path: file.path,
+        hunks: file.hunks.map((hunk) => ({
+          id: hunk.id,
+          path: hunk.path,
+          search: hunk.search,
+          replace: hunk.replace,
+          decision: hunk.decision,
+        })),
+      })),
+    };
+  }
+
+  ipcMain.handle('jewbot:composerAdd', async (_e, payload: { path?: string; proposed?: string }) => {
+    const rel = String(payload?.path ?? '');
+    let original = '';
+    try {
+      original = await files.read(rel);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT' && !(err instanceof Error && err.message.startsWith('read_file'))) throw err;
+    }
+    composerBatch.addFile(rel, original, String(payload?.proposed ?? ''));
+    return composerView();
+  });
+
+  ipcMain.handle('jewbot:composerState', async () => composerView());
+
+  ipcMain.handle('jewbot:composerDecide', async (_e, payload: { scope?: string; path?: string; id?: string; decision?: 'accept' | 'reject' }) => {
+    const decision = payload?.decision === 'reject' ? 'reject' : 'accept';
+    if (payload?.scope === 'file') {
+      if (decision === 'accept') composerBatch.acceptFile(String(payload.path ?? ''));
+      else composerBatch.rejectFile(String(payload.path ?? ''));
+    } else if (decision === 'accept') composerBatch.acceptHunk(String(payload?.id ?? ''));
+    else composerBatch.rejectHunk(String(payload?.id ?? ''));
+    return composerView();
+  });
+
+  ipcMain.handle('jewbot:composerApply', async () => {
+    const result = await composerBatch.apply(files);
+    return { ...result, ...composerView() };
+  });
+
+  ipcMain.handle('jewbot:composerUndo', async () => {
+    const result = await composerBatch.undo(files);
+    return { ...result, ...composerView() };
   });
 
   ipcMain.handle('jewbot:expandMentions', async (_e, text: string) => {

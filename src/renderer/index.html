@@ -146,6 +146,15 @@
         </div>
         <ul id="modulesList" class="modules-list"></ul>
       </div>
+      <div id="composerPanel">
+        <div class="row">
+          <h3 style="margin:0">Composer</h3>
+          <button class="secondary" id="composerAdd" type="button">Add editor buffer</button>
+          <button id="composerApply" type="button">Apply accepted</button>
+          <button class="secondary" id="composerUndo" type="button">Undo batch</button>
+        </div>
+        <div id="composerList"></div>
+      </div>
       <div class="term-block" id="cascadePanel">
         <div class="row">
           <h3 style="margin:0">Cascade</h3>
@@ -250,5 +259,6 @@ Spend: $0 · local Ollama only</pre>
   </div>
   <script src="./renderer.js"></script>
   <script src="./editor.js"></script>
+  <script src="./composer.js"></script>
 </body>
 </html>

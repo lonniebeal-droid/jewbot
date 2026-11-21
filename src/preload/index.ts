@@ -164,6 +164,12 @@ contextBridge.exposeInMainWorld('jewbot', {
     return () => ipcRenderer.removeListener('jewbot:cascadeEvent', listener);
   },
   expandMentions: (text: string) => ipcRenderer.invoke('jewbot:expandMentions', text) as Promise<{ text: string; error?: string }>,
+  composerAdd: (payload: { path: string; proposed: string }) => ipcRenderer.invoke('jewbot:composerAdd', payload),
+  composerState: () => ipcRenderer.invoke('jewbot:composerState'),
+  composerDecide: (payload: { scope: 'file' | 'hunk'; path?: string; id?: string; decision: 'accept' | 'reject' }) =>
+    ipcRenderer.invoke('jewbot:composerDecide', payload),
+  composerApply: () => ipcRenderer.invoke('jewbot:composerApply'),
+  composerUndo: () => ipcRenderer.invoke('jewbot:composerUndo'),
   editorList: (rel?: string) => ipcRenderer.invoke('jewbot:editorList', rel) as Promise<string[]>,
   editorOpen: (rel: string) =>
     ipcRenderer.invoke('jewbot:editorOpen', rel) as Promise<{

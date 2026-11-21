@@ -115,6 +115,10 @@
     if (state) state.textContent = info.origin === 'agent' ? 'Monaco · review' : 'Monaco';
   }
 
+  function publishBuffer() {
+    window.__jewbotEditor = { path: active, text: surface ? surface.value : '' };
+  }
+
   async function openPath(rel) {
     const info = await window.jewbot.editorOpen(rel);
     active = info.active;
