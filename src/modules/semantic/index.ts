@@ -31,7 +31,7 @@ export interface VectorFile {
 }
 
 export interface Mention {
-  kind: 'file' | 'folder' | 'codebase';
+  kind: 'file' | 'folder' | 'codebase' | 'docs';
   value: string;
 }
 
@@ -65,9 +65,38 @@ export async function reindex(root: string, options?: { host?: string; entries?:
       updated.push(file.path);
     });
   }
+  const docs = previous.files.filter((row) => row.path.startsWith('docs:'));
+  rows.push(...docs.filter((row) => !rows.some((kept) => kept.path === row.path)));
   rows.sort((a, b) => a.path.localeCompare(b.path));
   await writeStore(project, { version: 1, model: EMBED_MODEL, files: rows });
   return { updated, skipped };
+}
+
+export async function mergeDocRows(root: string, rows: VectorRow[]): Promise<void> {
+  const project = await realRoot(root);
+  const store = await readStore(project);
+  const incoming = new Map(rows.map((row) => [row.path, row]));
+  const kept = store.files.filter((row) => !incoming.has(row.path));
+  const next = [...kept, ...rows].sort((a, b) => a.path.localeCompare(b.path));
+  await writeStore(project, { version: 1, model: EMBED_MODEL, files: next });
+}
+
+export async function searchDocs(
+  root: string,
+  query: string,
+  k = 5,
+  options?: { host?: string; entries?: OllamaHostEntry[] },
+): Promise<Array<{ path: string; score: number }>> {
+  const project = await realRoot(root);
+  const store = await readStore(project);
+  const docs = store.files.filter((row) => row.path.startsWith('docs:'));
+  if (!docs.length) return [];
+  const host = options?.host || (await healthyHost(options?.entries));
+  const [vector] = await embedTexts({ host, input: [query], model: EMBED_MODEL });
+  return docs
+    .map((row) => ({ path: row.path, score: cosine(vector, row.vector) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k);
 }
 
 export async function semanticSearch(root: string, query: string, k = 5, options?: { host?: string; entries?: OllamaHostEntry[] }): Promise<Array<{ path: string; score: number }>> {
@@ -87,7 +116,7 @@ export function formatSemanticSearch(hits: Array<{ path: string; score: number }
   return hits.map((hit) => `${hit.path} score=${hit.score.toFixed(3)}`).join('\n');
 }
 
-const MENTION = /@(file|folder|codebase)\s+(\S+)/g;
+const MENTION = /@(file|folder|codebase|docs)\s+(\S+)/g;
 
 export function parseMentions(text: string): Mention[] {
   const mentions: Mention[] = [];
@@ -109,6 +138,9 @@ export async function expandMentions(root: string, text: string, options?: { hos
     } else if (mention.kind === 'folder') {
       const names = await listRel(root, mention.value);
       parts.push(`\n@folder ${mention.value}\n${names.join('\n')}`);
+    } else if (mention.kind === 'docs') {
+      const hits = await searchDocs(root, mention.value, 5, options);
+      parts.push(`\n@docs ${mention.value}\n${formatSemanticSearch(hits)}`);
     } else {
       const hits = await semanticSearch(root, mention.value, 5, options);
       parts.push(`\n@codebase ${mention.value}\n${formatSemanticSearch(hits)}`);

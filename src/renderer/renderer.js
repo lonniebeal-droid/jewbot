@@ -933,6 +933,14 @@ async function send() {
   }
 }
 
+document.getElementById('docsIndexFolder').onclick = async () => {
+  const res = await window.jewbot.docsFolder(document.getElementById('docsFolder').value.trim());
+  document.getElementById('docsOut').textContent = res.ok ? 'indexed folder' : res.error || 'index failed';
+};
+document.getElementById('docsIndexUrl').onclick = async () => {
+  const res = await window.jewbot.docsUrl(document.getElementById('docsUrl').value.trim());
+  document.getElementById('docsOut').textContent = res.ok ? (res.fetched ? 'fetched once' : 'cached') : res.error || 'fetch failed';
+};
 document.getElementById('refresh').onclick = refresh;
 document.getElementById('send').onclick = send;
 document.getElementById('stop').onclick = () => {

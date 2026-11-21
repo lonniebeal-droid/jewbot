@@ -143,6 +143,18 @@
           <button class="secondary" id="refresh" type="button">Refresh</button>
         </div>
         <pre id="status">Loading…</pre>
+        <div id="docsPanel">
+          <div class="row">
+            <h3 style="margin:0">Docs</h3>
+            <input id="docsFolder" placeholder="local folder" />
+            <button class="secondary" id="docsIndexFolder" type="button">Index folder</button>
+          </div>
+          <div class="row">
+            <input id="docsUrl" placeholder="https://example.com/docs" />
+            <button class="secondary" id="docsIndexUrl" type="button">Fetch once</button>
+          </div>
+          <pre id="docsOut" class="term-out"></pre>
+        </div>
         <div id="modelsPanel">
           <div class="row">
             <input id="modelsHost" placeholder="http://127.0.0.1:11434" />

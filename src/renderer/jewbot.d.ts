@@ -135,6 +135,8 @@ declare global {
       modelsPull: (payload: { host: string; name: string }) => Promise<{ ok: boolean; error?: string }>;
       modelsDelete: (payload: { host: string; name: string }) => Promise<{ ok: boolean; needsConfirmation?: boolean; error?: string }>;
       modelsSettings: (payload?: { models: Record<string, string> }) => Promise<{ models: Record<string, string> }>;
+      docsFolder: (folder: string) => Promise<{ ok: boolean; error?: string; fetched?: boolean }>;
+      docsUrl: (url: string) => Promise<{ ok: boolean; error?: string; fetched?: boolean }>;
       expandMentions: (text: string) => Promise<{ text: string; error?: string }>;
       composerAdd: (payload: { path: string; proposed: string }) => Promise<unknown>;
       composerState: () => Promise<unknown>;

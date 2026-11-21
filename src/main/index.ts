@@ -20,6 +20,7 @@ import { acceptInline, completeInline, EditorSession, proposeInlineEdit, tabLabe
 import { expandMentions } from '../modules/semantic';
 import { deleteLocalModel, listLocalModels, pullLocalModel, loadSettings, saveFeatureModels } from '../modules/model-manager';
 import { loadRules, rulesEnabled, setRulesEnabled } from '../modules/rules';
+import { indexDocFolder, indexDocUrl } from '../modules/docs';
 import { ComposerBatch } from '../modules/composer';
 import { assertAllowlisted, RemoteWorkspace } from '../modules/remote';
 import { workspaceFromClient } from '../modules/remote/live';
@@ -706,6 +707,24 @@ app.whenReady().then(async () => {
       inlineEdit: payload.models.inlineEdit,
     });
     return { models: saved.models };
+  });
+
+  ipcMain.handle('jewbot:docsFolder', async (_e, folder: string) => {
+    try {
+      const result = await indexDocFolder(projectRoot, String(folder ?? ''));
+      return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('jewbot:docsUrl', async (_e, url: string) => {
+    try {
+      const result = await indexDocUrl(projectRoot, String(url ?? ''));
+      return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('jewbot:expandMentions', async (_e, text: string) => {

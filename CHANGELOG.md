@@ -2,6 +2,14 @@
 
 All notable changes to Jewbot are listed here. The packaged app version comes from `package.json`.
 
+## 0.4.0 (unreleased)
+
+### M21 — Local docs
+
+- `@docs` searches rows in the M11 embedding store. A chosen local folder is indexed there.
+- A public http(s) page is fetched once and cached under `.jewbot/index`. The next index uses the cache.
+- Paid-provider hosts are refused. A codebase reindex keeps the `docs:` rows.
+
 ## 0.3.0 — 2026-11-21
 
 Remote workspace, the agent loop, local model choice, and project rules. Installers stay unsigned. This changelog does not push a git tag.
