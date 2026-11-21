@@ -112,25 +112,34 @@ function createWindow(): void {
 
   if (process.env.JEWBOT_LAUNCH_SMOKE === '1' && process.env.JEWBOT_UI_SMOKE !== '1') {
     let finished = false;
-    const timer = setTimeout(() => {
-      if (finished) return;
-      finished = true;
-      console.error('JEWBOT_LAUNCH_FAIL timeout waiting for the window');
-      app.exit(1);
-    }, 30000);
-    mainWindow.webContents.on('did-finish-load', () => {
+    const finish = (code: number, line: string) => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
-      console.log(`JEWBOT_LAUNCH_OK ${app.getVersion()} ${process.platform} ${process.arch}`);
-      app.exit(0);
+      if (code === 0) console.log(line);
+      else console.error(line);
+      app.exit(code);
+    };
+    const timer = setTimeout(() => finish(1, 'JEWBOT_LAUNCH_FAIL timeout waiting for the editor'), 30_000);
+    mainWindow.webContents.on('did-finish-load', () => {
+      void (async () => {
+        const deadline = Date.now() + 20_000;
+        while (Date.now() < deadline) {
+          const mounted = await mainWindow!.webContents.executeJavaScript(
+            `Boolean(document.querySelector('#monacoEditor .monaco-editor'))`,
+          );
+          if (mounted) {
+            finish(0, `JEWBOT_LAUNCH_OK ${app.getVersion()} ${process.platform} ${process.arch} editor`);
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        finish(1, 'JEWBOT_LAUNCH_FAIL editor did not mount');
+      })();
     });
     mainWindow.webContents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
-      if (!isMainFrame || finished) return;
-      finished = true;
-      clearTimeout(timer);
-      console.error(`JEWBOT_LAUNCH_FAIL ${code} ${description}`);
-      app.exit(1);
+      if (!isMainFrame) return;
+      finish(1, `JEWBOT_LAUNCH_FAIL ${code} ${description}`);
     });
   }
 
@@ -418,8 +427,8 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
       report.hasBridge &&
       report.missing.length === 0 &&
       report.milestone === 'M7' &&
-      report.version === '0.4.0' &&
-      (report.aboutText || '').includes('0.4.0') &&
+      report.version === '0.5.0' &&
+      (report.aboutText || '').includes('0.5.0') &&
       (report.aboutText || '').includes('unsigned') &&
       !!report.projectRoot &&
       report.sendEnabled &&

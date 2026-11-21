@@ -2,6 +2,14 @@
 
 All notable changes to Jewbot are listed here. The packaged app version comes from `package.json`.
 
+## 0.5.0 — 2026-11-21
+
+Production checks on free GitHub-hosted runners. No paid APIs and no repository secrets.
+
+- An Ubuntu job installs Ollama from the official install script, pulls `qwen2.5-coder:0.5b` and `nomic-embed-text`, and runs a headless agent task (read, propose, Accept, test) plus a fill-in-the-middle call and an embedding.
+- An Electron job opens the window under Xvfb and waits until the Monaco editor mounts.
+- The README user guide covers install on Mac, Windows, and a Raspberry Pi, first-run Ollama, LAN hosts, SSH hosts, MCP, rules, and the safety gates.
+
 ## 0.4.0 — 2026-11-21
 
 Local MCP, background tasks on a LAN host, and offline docs. Installers stay unsigned. This changelog does not push a git tag.
