@@ -18,6 +18,7 @@ export * as models from './model-manager';
 export * as remote from './remote';
 export * as rules from './rules';
 export * as docs from './docs';
+export * as mcp from './mcp';
 export * as semantic from './semantic';
 export * as composer from './composer';
 export * as git from './git';

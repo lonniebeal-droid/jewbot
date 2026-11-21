@@ -4,6 +4,12 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 
 ## 0.4.0 (unreleased)
 
+### M19 — MCP client
+
+- Stdio servers come from `~/.jewbot/mcp.json`. A URL, token, or password in that file is refused.
+- `mcp_call` reaches the agent only after that server's allow toggle is on. Off means the process does not start.
+- The MCP panel lists the local servers.
+
 ### M21 — Local docs
 
 - `@docs` searches rows in the M11 embedding store. A chosen local folder is indexed there.

@@ -173,6 +173,9 @@ contextBridge.exposeInMainWorld('jewbot', {
     ipcRenderer.invoke('jewbot:modelsSettings', payload) as Promise<{ models: Record<string, string> }>,
   docsFolder: (folder: string) => ipcRenderer.invoke('jewbot:docsFolder', folder) as Promise<{ ok: boolean; error?: string; fetched?: boolean }>,
   docsUrl: (url: string) => ipcRenderer.invoke('jewbot:docsUrl', url) as Promise<{ ok: boolean; error?: string; fetched?: boolean }>,
+  mcpList: () => ipcRenderer.invoke('jewbot:mcpList') as Promise<{ servers: Array<{ name: string; allow: boolean; line: string }>; error?: string }>,
+  mcpAllow: (payload: { name: string; allow: boolean }) =>
+    ipcRenderer.invoke('jewbot:mcpAllow', payload) as Promise<{ ok: boolean; error?: string }>,
   expandMentions: (text: string) => ipcRenderer.invoke('jewbot:expandMentions', text) as Promise<{ text: string; error?: string }>,
   composerAdd: (payload: { path: string; proposed: string }) => ipcRenderer.invoke('jewbot:composerAdd', payload),
   composerState: () => ipcRenderer.invoke('jewbot:composerState'),

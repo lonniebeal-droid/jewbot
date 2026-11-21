@@ -11,6 +11,7 @@ export const jewbotModule = builtinModule({
     { name: 'find_files', description: 'Find files by name or glob.' },
     { name: 'search_context', description: 'Search file excerpts.' },
     { name: 'semantic_search', description: 'Rank files with local nomic-embed-text vectors. No paid API.' },
+    { name: 'mcp_call', description: 'Call a tool on a local stdio MCP server. The server allow toggle must be on.' },
     { name: 'list_dir', description: 'List a directory inside the project.' },
     { name: 'read_file', description: 'Read a file inside the project.' },
     { name: 'write_file', description: 'Propose a file edit. Apply waits for Accept.' },

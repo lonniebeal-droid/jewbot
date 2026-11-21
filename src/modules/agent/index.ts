@@ -29,6 +29,7 @@ import {
 import { formatSshObservation, HostKeyPrompt, SecretPrompt, SshExecResult, SshManager } from '../ssh';
 import { ContextIndexer, formatFindResult, formatSearchResult } from '../context';
 import { systemWithRules } from '../rules';
+import { callConfiguredTool } from '../mcp';
 import { checkShellCommand, issueConfirmation } from '../safety';
 
 export type AgentStatus = 'idle' | 'planning' | 'acting' | 'observing' | 'done' | 'blocked';
@@ -173,6 +174,7 @@ Live tools (paths stay inside the project root; the shell cwd is the project roo
 - music_next_free {"tool":"music_next_free","args":{}}
 - music_next_free {"tool":"music_next_free","args":{"draft":true}}
 - music_mark {"tool":"music_mark","args":{"id":"rel_…","status":"done"}}
+- mcp_call {"tool":"mcp_call","args":{"server":"local","name":"echo","arguments":{}}}
 
 The user message starts with a compact project tree and, when the goal names a file or symbol, a few excerpts. That is not the whole repo. Secret files are not in the index. Use find_files and search_context before guessing paths.
 Put the JSON object on its own line. One tool per turn.
@@ -184,7 +186,8 @@ fleet_list reads ~/.jewbot/fleet.json when that file exists, otherwise localhost
 portfolio_list_gates and portfolio_next_free read .jewbot/portfolio-gates.json in the open project, or the bundled checklist when that file is missing. portfolio_next_free returns the next open gate that is not blocked by an owner or a human. portfolio_mark_gate sets one status (open, blocked, or done) in that file only. It ignores command, approved, executionId, deploy, and root. It does not deploy and it does not pause for a human gate.
 music_list_releases, music_next_free, and music_mark use .jewbot/music-release.json in the open project. They do not upload, log in, or pay. An upload, login, or payment request marks the release blocked. draft:true may ask local Ollama for notes. A host argument is ignored. Notes text does not mark a release done.
 Destructive commands (rm -rf, git push --force, mkfs, dd of=, chmod -R 777 /, and similar) do not run until the owner confirms in the UI. If OBSERVE says BLOCKED, the command did not run — do not claim it did.
-ask_owner pauses for a human. Do not claim a tool ran unless you emitted its JSON.`;
+ask_owner pauses for a human. Do not claim a tool ran unless you emitted its JSON.
+mcp_call runs a tool on a local stdio server from ~/.jewbot/mcp.json. If that server's allow toggle is off, the process does not start and OBSERVE says BLOCKED.`;
 
 export class AgentLoop {
   status: AgentStatus = 'idle';
@@ -404,6 +407,18 @@ export class AgentLoop {
           return formatSemanticSearch(
             await semanticSearch(this.deps.files.projectRoot, String(tool.args.query ?? ''), Number(tool.args.k ?? 5)),
           );
+        case 'mcp_call': {
+          const args =
+            tool.args.arguments && typeof tool.args.arguments === 'object' && !Array.isArray(tool.args.arguments)
+              ? (tool.args.arguments as Record<string, unknown>)
+              : {};
+          const result = await callConfiguredTool({
+            server: String(tool.args.server ?? ''),
+            tool: String(tool.args.name ?? tool.args.tool ?? ''),
+            args,
+          });
+          return result.text;
+        }
         case 'ask_owner':
           return String(tool.args.question ?? 'Owner input required');
         default:
