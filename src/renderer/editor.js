@@ -13,6 +13,8 @@
 
   let active = null;
   let surface = null;
+  let ghost = '';
+  let completeTimer = null;
 
   function ensureSurface() {
     if (surface) return surface;
@@ -24,6 +26,21 @@
     surface.addEventListener('input', () => {
       if (!active || !window.jewbot.editorEdit) return;
       window.jewbot.editorEdit({ path: active, text: surface.value }).then(renderTabs).catch(() => {});
+      scheduleGhost();
+    });
+    surface.addEventListener('keydown', (event) => {
+      if (event.key === 'Tab' && ghost) {
+        event.preventDefault();
+        const start = surface.selectionStart;
+        const next = surface.value.slice(0, start) + ghost + surface.value.slice(start);
+        ghost = '';
+        surface.value = next;
+        window.jewbot.editorEdit({ path: active, text: next }).then(renderTabs).catch(() => {});
+      } else if (event.key === 'Escape' && ghost) {
+        event.preventDefault();
+        ghost = '';
+        if (state) state.textContent = 'Monaco';
+      }
     });
     mountMonaco();
     return surface;
@@ -108,6 +125,19 @@
       button.addEventListener('click', () => openPath(name));
       tree.appendChild(button);
     }
+  }
+
+  function scheduleGhost() {
+    if (!window.jewbot.editorComplete || !surface) return;
+    clearTimeout(completeTimer);
+    const prefix = surface.value.slice(0, surface.selectionStart || surface.value.length);
+    const suffix = surface.value.slice(surface.selectionStart || surface.value.length);
+    completeTimer = setTimeout(() => {
+      window.jewbot.editorComplete({ prefix, suffix }).then((result) => {
+        ghost = result && !result.disabled ? result.ghost : '';
+        if (state) state.textContent = result && result.disabled ? 'Monaco · completions off' : ghost ? 'Monaco · Tab to accept' : 'Monaco';
+      }).catch(() => {});
+    }, 250);
   }
 
   async function saveActive() {

@@ -11,6 +11,13 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 - Ctrl/Cmd+S writes human typing immediately inside the project jail.
 - Agent text stays on the M3 diff until the owner presses Accept.
 
+### M10 — Tab autocomplete
+
+- Inline ghost text from Ollama fill-in-the-middle (`POST /api/generate` with `suffix`).
+- Default model `qwen2.5-coder:1.5b` (`JEWBOT_COMPLETE_MODEL` overrides it).
+- Debounced and cancellable. Tab accepts, Esc dismisses.
+- Disabled when the host registry has no healthy local Ollama. Every generate call passes `assertLocalSpendOnly`.
+
 ## 0.1.0 — 2026-11-10
 
 First installable build. Milestones M0 through M7, plus the local modules and LAN routing below. Installers are unsigned. Code signing and Apple notarization are off because they cost money. That stays an owner decision. Spend stays $0.

@@ -144,6 +144,7 @@ declare global {
         active: string | null;
         labels: string[];
       }>;
+      editorComplete: (payload: { prefix: string; suffix: string }) => Promise<{ disabled: boolean; ghost: string }>;
       editorSave: (rel: string) => Promise<{ kind: 'clean' | 'saved' | 'review'; path: string; preview?: { unifiedDiff: string } }>;
       editorAccept: (rel: string) => Promise<{ ok: boolean; path: string }>;
       modulesList: () => Promise<
