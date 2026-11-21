@@ -416,6 +416,7 @@ export class AgentLoop {
             server: String(tool.args.server ?? ''),
             tool: String(tool.args.name ?? tool.args.tool ?? ''),
             args,
+            signal,
           });
           return result.text;
         }
