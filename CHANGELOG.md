@@ -36,6 +36,12 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 - A commit message can be drafted on local Ollama after `assertLocalSpendOnly`.
 - Push, force-push, reset, and clean wait for the existing confirm grant. Commit never pushes.
 
+### M14 — Inline edit
+
+- A selection plus a prompt goes to local Ollama after `assertLocalSpendOnly`.
+- The model reply replaces only that selection and is shown as a unified diff.
+- Accept writes it. Reject leaves the file alone.
+
 ## 0.1.0 — 2026-11-10
 
 First installable build. Milestones M0 through M7, plus the local modules and LAN routing below. Installers are unsigned. Code signing and Apple notarization are off because they cost money. That stays an owner decision. Spend stays $0.
