@@ -20,6 +20,7 @@ import { acceptInline, completeInline, EditorSession, proposeInlineEdit, tabLabe
 import { expandMentions } from '../modules/semantic';
 import { deleteLocalModel, listLocalModels, pullLocalModel, loadSettings, saveFeatureModels } from '../modules/model-manager';
 import { loadRules, rulesEnabled, setRulesEnabled } from '../modules/rules';
+import { acceptBackgroundTask, assertBackgroundHost, enqueueBackgroundTask, runBackgroundTask, type BackgroundTask } from '../modules/background';
 import { describeServer, loadMcpServers, setServerAllow } from '../modules/mcp';
 import { ComposerBatch } from '../modules/composer';
 import { assertAllowlisted, RemoteWorkspace } from '../modules/remote';
@@ -40,6 +41,7 @@ let files = new FileWorkspace(projectRoot);
 let editorSession = new EditorSession();
 let composerBatch = new ComposerBatch();
 let remoteWorkspace: RemoteWorkspace | null = null;
+const backgroundTasks = new Map<string, BackgroundTask>();
 let context = new ContextIndexer(projectRoot);
 const cascadeStoreRoot =
   process.env.JEWBOT_UI_SMOKE === '1' ? fs.mkdtempSync(path.join(os.tmpdir(), 'jewbot-m6-ui-')) : projectRoot;
@@ -707,6 +709,45 @@ app.whenReady().then(async () => {
       inlineEdit: payload.models.inlineEdit,
     });
     return { models: saved.models };
+  });
+
+  ipcMain.handle('jewbot:backgroundRun', async (event, payload: { host?: string; model?: string; goal?: string }) => {
+    const name = String(payload?.host ?? '');
+    const listed = defaultSshManager.listHosts().find((host) => host.name === name);
+    if (!listed) return { ok: false, error: `Host not allowlisted: ${name}` };
+    try {
+      assertBackgroundHost(listed.host);
+      const queued = enqueueBackgroundTask({ name: listed.name, host: listed.host }, String(payload?.model || 'qwen2.5-coder:1.5b'), String(payload?.goal ?? ''));
+      await defaultSshManager.connect(listed.name, {
+        confirmHostKey: (prompt) => requestHostKey(event.sender, prompt),
+        promptSecret: (prompt) => requestSecret(event.sender, prompt),
+      });
+      const task = await runBackgroundTask(queued, { name: listed.name, host: listed.host }, {
+        async exec(host, command) {
+          const prepared = defaultSshManager.prepareExec(command);
+          if (!prepared.ok) throw new Error(prepared.reason || 'Command blocked');
+          const started = defaultSshManager.startExec(host, command);
+          const result = await started.done;
+          return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
+        },
+      });
+      backgroundTasks.set(task.id, task);
+      return { ok: task.status === 'review', task };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('jewbot:backgroundAccept', async (_e, id: string) => {
+    const task = backgroundTasks.get(String(id ?? ''));
+    if (!task) return { ok: false, error: 'No background task' };
+    try {
+      const applied = await acceptBackgroundTask(task, files, true);
+      backgroundTasks.set(applied.id, applied);
+      return { ok: true, task: applied };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('jewbot:mcpList', async () => {

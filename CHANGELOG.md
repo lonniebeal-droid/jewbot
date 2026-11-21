@@ -10,6 +10,12 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 - `mcp_call` reaches the agent only after that server's allow toggle is on. Off means the process does not start.
 - The MCP panel lists the local servers.
 
+### M20 — Background agents
+
+- Queue a goal on an allowlisted LAN SSH host. The command talks only to `127.0.0.1:11434` on that host.
+- Public and paid hosts are refused. The reply comes back as a diff.
+- Accept writes the files. The run itself does not.
+
 ## 0.3.0 — 2026-11-21
 
 Remote workspace, the agent loop, local model choice, and project rules. Installers stay unsigned. This changelog does not push a git tag.

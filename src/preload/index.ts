@@ -171,6 +171,9 @@ contextBridge.exposeInMainWorld('jewbot', {
     ipcRenderer.invoke('jewbot:modelsDelete', payload) as Promise<{ ok: boolean; needsConfirmation?: boolean; error?: string }>,
   modelsSettings: (payload?: { models: Record<string, string> }) =>
     ipcRenderer.invoke('jewbot:modelsSettings', payload) as Promise<{ models: Record<string, string> }>,
+  backgroundRun: (payload: { host: string; model: string; goal: string }) =>
+    ipcRenderer.invoke('jewbot:backgroundRun', payload) as Promise<{ ok: boolean; error?: string; task?: { id: string; diff?: string; status: string } }>,
+  backgroundAccept: (id: string) => ipcRenderer.invoke('jewbot:backgroundAccept', id) as Promise<{ ok: boolean; error?: string }>,
   mcpList: () => ipcRenderer.invoke('jewbot:mcpList') as Promise<{ servers: Array<{ name: string; allow: boolean; line: string }>; error?: string }>,
   mcpAllow: (payload: { name: string; allow: boolean }) =>
     ipcRenderer.invoke('jewbot:mcpAllow', payload) as Promise<{ ok: boolean; error?: string }>,
