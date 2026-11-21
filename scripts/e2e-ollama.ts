@@ -16,6 +16,7 @@ import { defaultTerminal } from '../src/modules/terminal';
 
 const HOST = 'http://127.0.0.1:11434';
 const CHAT_MODEL = process.env.JEWBOT_MODEL || 'qwen2.5-coder:1.5b';
+const FIM_MODEL = process.env.JEWBOT_FIM_MODEL || 'qwen2.5-coder:0.5b';
 const EMBED_MODEL = process.env.JEWBOT_EMBED_MODEL || 'nomic-embed-text';
 
 function expect(cond: boolean, msg: string) {
@@ -36,9 +37,10 @@ async function main() {
   expect(tags.ok, 'Ollama /api/tags is not reachable');
 
   await warm(CHAT_MODEL);
+  await warm(FIM_MODEL);
   const middle = await generateFim({
     host: HOST,
-    model: CHAT_MODEL,
+    model: FIM_MODEL,
     prompt: 'function add(a, b) {\n  return ',
     suffix: ';\n}\n',
   });
