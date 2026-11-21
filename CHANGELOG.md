@@ -4,6 +4,12 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 
 ## 0.3.0 (unreleased)
 
+### M15 — Remote SSH workspace
+
+- Open a folder on a host from `~/.jewbot/hosts.json` over SFTP.
+- The file tree, editor save, and text search stay inside that remote root.
+- A remote terminal command is `cd` into the folder, then the command. Host-key confirm and the destructive grant still apply. Unknown hosts are refused.
+
 ### Window wiring
 
 - Ctrl/Cmd+K in the editor asks local Ollama for an inline edit and shows Accept / Reject.

@@ -219,6 +219,17 @@
     });
   }
 
+  const remoteOpen = document.getElementById('remoteOpen');
+  if (remoteOpen && window.jewbot.remoteOpen) {
+    remoteOpen.addEventListener('click', () => {
+      const host = (document.getElementById('remoteHost') || {}).value || '';
+      const root = (document.getElementById('remoteRoot') || {}).value || '';
+      window.jewbot.remoteOpen({ host: host.trim(), root: root.trim() }).then(() => refreshTree()).catch((err) => {
+        if (state) state.textContent = err instanceof Error ? err.message : String(err);
+      });
+    });
+  }
+
   if (saveBtn) saveBtn.addEventListener('click', () => saveActive().catch(() => {}));
   function editorFocused() {
     const el = document.activeElement;
