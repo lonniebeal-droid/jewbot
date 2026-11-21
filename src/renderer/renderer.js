@@ -933,6 +933,16 @@ async function send() {
   }
 }
 
+document.getElementById('mcpRefresh').onclick = async () => {
+  const out = document.getElementById('mcpOut');
+  if (!window.jewbot.mcpList) return;
+  const listed = await window.jewbot.mcpList();
+  if (listed.error) {
+    out.textContent = listed.error;
+    return;
+  }
+  out.textContent = listed.servers.length ? listed.servers.map((server) => server.line).join('\n') : '(no MCP servers)';
+};
 document.getElementById('refresh').onclick = refresh;
 document.getElementById('send').onclick = send;
 document.getElementById('stop').onclick = () => {

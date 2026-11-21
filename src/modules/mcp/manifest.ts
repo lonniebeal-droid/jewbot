@@ -1,0 +1,1 @@
+export { jewbotModule } from './index';
