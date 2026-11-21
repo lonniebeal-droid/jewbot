@@ -94,13 +94,10 @@ async function main() {
     expect(sawRead, `agent did not read hello.txt (${last})`);
     expect(accepted, `Accept did not write hello.txt (${last})`);
     expect((await fs.readFile(path.join(root, 'hello.txt'), 'utf8')) === 'hello jewbot\n', 'file was not updated');
-    if (!sawTest) {
-      const started = defaultTerminal.start('node check.js', { cwd: root, projectRoot: root });
-      const ran = await started.done;
-      expect(ran.exitCode === 0 && ran.stdout.includes('e2e-ok'), ran.stderr || ran.stdout);
-      sawTest = true;
-    }
-    expect(sawTest, 'the test command did not pass');
+    expect(
+      sawTest,
+      'the agent did not successfully invoke node check.js through AgentLoop; direct terminal fallback is not accepted',
+    );
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
