@@ -30,6 +30,12 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 - Accept or reject a whole file or one hunk.
 - Apply writes only the accepted text. One undo restores every file in that apply.
 
+### M13 — Git panel
+
+- Status, staged and unstaged diffs, stage, unstage, commit, and branch switch stay local.
+- A commit message can be drafted on local Ollama after `assertLocalSpendOnly`.
+- Push, force-push, reset, and clean wait for the existing confirm grant. Commit never pushes.
+
 ## 0.1.0 — 2026-11-10
 
 First installable build. Milestones M0 through M7, plus the local modules and LAN routing below. Installers are unsigned. Code signing and Apple notarization are off because they cost money. That stays an owner decision. Spend stays $0.
