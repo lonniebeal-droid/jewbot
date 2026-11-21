@@ -15,6 +15,8 @@
   let surface = null;
   let ghost = '';
   let completeTimer = null;
+  let monacoEditor = null;
+  let inlineProposal = null;
 
   function ensureSurface() {
     if (surface) return surface;
@@ -26,6 +28,7 @@
     surface.addEventListener('input', () => {
       if (!active || !window.jewbot.editorEdit) return;
       window.jewbot.editorEdit({ path: active, text: surface.value }).then(renderTabs).catch(() => {});
+      publishBuffer();
       scheduleGhost();
     });
     surface.addEventListener('keydown', (event) => {
@@ -74,9 +77,18 @@
           scrollBeyondLastLine: false,
           wordWrap: 'on',
         });
+        monacoEditor = editor;
         surface = {
           get value() { return editor.getValue(); },
           set value(next) { editor.setValue(next); },
+          get selectionStart() {
+            const pos = editor.getPosition();
+            return pos ? editor.getModel().getOffsetAt(pos) : editor.getValue().length;
+          },
+          get selectionEnd() {
+            const sel = editor.getSelection();
+            return sel ? editor.getModel().getOffsetAt(sel.getEndPosition()) : editor.getValue().length;
+          },
         };
         editor.onDidChangeModelContent(() => {
           if (!active || !window.jewbot.editorEdit) return;
@@ -104,11 +116,16 @@
     if (state) state.textContent = info.origin === 'agent' ? 'Monaco · review' : 'Monaco';
   }
 
+  function publishBuffer() {
+    window.__jewbotEditor = { path: active, text: surface ? surface.value : '' };
+  }
+
   async function openPath(rel) {
     const info = await window.jewbot.editorOpen(rel);
     active = info.active;
     ensureSurface().value = info.text || '';
     renderTabs(info);
+    publishBuffer();
   }
 
   async function refreshTree() {
@@ -152,14 +169,75 @@
     renderTabs(info);
   }
 
+  function selectedText() {
+    if (monacoEditor && monacoEditor.getModel && monacoEditor.getSelection) {
+      return monacoEditor.getModel().getValueInRange(monacoEditor.getSelection());
+    }
+    const el = document.getElementById('editorSurface');
+    if (!el || el.selectionStart == null) return '';
+    return el.value.slice(el.selectionStart, el.selectionEnd);
+  }
+
+  async function inlineEdit() {
+    if (!active || !window.jewbot.editorInline) return;
+    const selection = selectedText();
+    if (!selection) return;
+    const prompt = window.prompt('Inline edit', '');
+    if (!prompt) return;
+    const proposal = await window.jewbot.editorInline({
+      path: active,
+      fileText: surface.value,
+      selection: selection,
+      prompt: prompt,
+    });
+    inlineProposal = proposal;
+    const box = document.getElementById('inlineEdit');
+    const diff = document.getElementById('inlineDiff');
+    if (diff) diff.textContent = proposal.unifiedDiff;
+    if (box) box.hidden = false;
+  }
+
+  const inlineAccept = document.getElementById('inlineAccept');
+  const inlineReject = document.getElementById('inlineReject');
+  if (inlineAccept) {
+    inlineAccept.addEventListener('click', () => {
+      if (!inlineProposal || !window.jewbot.editorInlineAccept) return;
+      window.jewbot.editorInlineAccept(inlineProposal).then((info) => {
+        if (surface) surface.value = inlineProposal.proposed;
+        inlineProposal = null;
+        const box = document.getElementById('inlineEdit');
+        if (box) box.hidden = true;
+        renderTabs(info);
+      }).catch(() => {});
+    });
+  }
+  if (inlineReject) {
+    inlineReject.addEventListener('click', () => {
+      inlineProposal = null;
+      const box = document.getElementById('inlineEdit');
+      if (box) box.hidden = true;
+    });
+  }
+
   if (saveBtn) saveBtn.addEventListener('click', () => saveActive().catch(() => {}));
+  function editorFocused() {
+    const el = document.activeElement;
+    if (el && host.contains(el)) return true;
+    if (monacoEditor && monacoEditor.hasTextFocus && monacoEditor.hasTextFocus()) return true;
+    return false;
+  }
+
   document.addEventListener('keydown', (event) => {
+    if (!editorFocused()) return;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-      const target = event.target;
-      if (target && target.id === 'editorSurface') {
-        event.preventDefault();
-        saveActive().catch(() => {});
-      }
+      event.preventDefault();
+      saveActive().catch(() => {});
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      inlineEdit().catch((err) => {
+        if (state) state.textContent = err instanceof Error ? err.message : String(err);
+      });
     }
   });
   refreshTree().catch(() => {});

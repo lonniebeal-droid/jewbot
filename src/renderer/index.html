@@ -108,6 +108,13 @@
       <pre id="editorTree">(open a project)</pre>
       <div id="editorTabs"></div>
       <div id="monacoEditor"></div>
+      <div id="inlineEdit" hidden>
+        <pre id="inlineDiff"></pre>
+        <div class="row">
+          <button id="inlineAccept" type="button">Accept</button>
+          <button class="secondary" id="inlineReject" type="button">Reject</button>
+        </div>
+      </div>
     </section>
     <div class="panel">
       <div class="row">
@@ -138,6 +145,38 @@
           <span class="muted" id="modulesState">…</span>
         </div>
         <ul id="modulesList" class="modules-list"></ul>
+      </div>
+      <div id="gitPanel">
+        <div class="row">
+          <h3 style="margin:0">Git</h3>
+          <button class="secondary" id="gitRefresh" type="button">Status</button>
+          <button class="secondary" id="gitDiff" type="button">Diff</button>
+          <button class="secondary" id="gitStage" type="button">Stage</button>
+          <button class="secondary" id="gitUnstage" type="button">Unstage</button>
+        </div>
+        <input id="gitPath" placeholder="path (optional)" />
+        <div class="row">
+          <input id="gitMessage" placeholder="Commit message" />
+          <button class="secondary" id="gitSuggest" type="button">Suggest</button>
+          <button id="gitCommit" type="button">Commit</button>
+        </div>
+        <div class="row">
+          <input id="gitBranch" placeholder="branch" />
+          <button class="secondary" id="gitSwitch" type="button">Switch</button>
+          <button class="danger" id="gitPush" type="button">Push</button>
+          <button class="danger" id="gitReset" type="button">Reset</button>
+          <button class="danger" id="gitClean" type="button">Clean</button>
+        </div>
+        <pre id="gitOut" class="term-out"></pre>
+      </div>
+      <div id="composerPanel">
+        <div class="row">
+          <h3 style="margin:0">Composer</h3>
+          <button class="secondary" id="composerAdd" type="button">Add editor buffer</button>
+          <button id="composerApply" type="button">Apply accepted</button>
+          <button class="secondary" id="composerUndo" type="button">Undo batch</button>
+        </div>
+        <div id="composerList"></div>
       </div>
       <div class="term-block" id="cascadePanel">
         <div class="row">
@@ -243,5 +282,7 @@ Spend: $0 · local Ollama only</pre>
   </div>
   <script src="./renderer.js"></script>
   <script src="./editor.js"></script>
+  <script src="./composer.js"></script>
+  <script src="./git.js"></script>
 </body>
 </html>

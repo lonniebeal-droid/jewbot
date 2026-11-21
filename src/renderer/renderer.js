@@ -893,12 +893,21 @@ async function startSsh(command, executionId) {
   }
 }
 
-function send() {
-  const text = goalEl.value.trim();
-  if (!text || activeRequest) return;
+async function send() {
+  const typed = goalEl.value.trim();
+  if (!typed || activeRequest) return;
   if (!window.jewbot) {
     addMessage('error', 'Preload bridge missing. Launch with npm start.');
     return;
+  }
+  let text = typed;
+  if (window.jewbot.expandMentions) {
+    try {
+      const expanded = await window.jewbot.expandMentions(typed);
+      if (expanded && expanded.text) text = expanded.text;
+    } catch (err) {
+      addMessage('error', err instanceof Error ? err.message : String(err));
+    }
   }
   goalEl.value = '';
   addMessage('user', text);

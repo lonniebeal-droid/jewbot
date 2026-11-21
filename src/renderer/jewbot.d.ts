@@ -129,6 +129,15 @@ declare global {
       cascadeStop: () => Promise<{ runState?: string }>;
       cascadeRequeue: (id: string) => Promise<{ ok: boolean; reason?: string }>;
       cascadeRemove: (id: string) => Promise<{ ok: boolean; reason?: string }>;
+      expandMentions: (text: string) => Promise<{ text: string; error?: string }>;
+      composerAdd: (payload: { path: string; proposed: string }) => Promise<unknown>;
+      composerState: () => Promise<unknown>;
+      composerDecide: (payload: { scope: 'file' | 'hunk'; path?: string; id?: string; decision: 'accept' | 'reject' }) => Promise<unknown>;
+      composerApply: () => Promise<unknown>;
+      composerUndo: () => Promise<unknown>;
+      gitRun: (payload: { action: string; args?: string[]; executionId?: string }) => Promise<unknown>;
+      gitConfirm: (payload: { action: 'push' | 'reset' | 'clean'; args?: string[] }) => Promise<unknown>;
+      gitSuggest: () => Promise<{ message: string; error?: string }>;
       editorList: (rel?: string) => Promise<string[]>;
       editorOpen: (rel: string) => Promise<{
         text: string;
@@ -144,6 +153,20 @@ declare global {
         active: string | null;
         labels: string[];
       }>;
+      editorInline: (payload: { path: string; fileText: string; selection: string; prompt: string }) => Promise<{
+        path: string;
+        original: string;
+        proposed: string;
+        unifiedDiff: string;
+        replacement: string;
+      }>;
+      editorInlineAccept: (proposal: {
+        path: string;
+        original: string;
+        proposed: string;
+        unifiedDiff: string;
+        replacement: string;
+      }) => Promise<{ ok: boolean; path: string }>;
       editorComplete: (payload: { prefix: string; suffix: string }) => Promise<{ disabled: boolean; ghost: string }>;
       editorSave: (rel: string) => Promise<{ kind: 'clean' | 'saved' | 'review'; path: string; preview?: { unifiedDiff: string } }>;
       editorAccept: (rel: string) => Promise<{ ok: boolean; path: string }>;

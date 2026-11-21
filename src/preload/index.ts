@@ -163,6 +163,16 @@ contextBridge.exposeInMainWorld('jewbot', {
     ipcRenderer.on('jewbot:cascadeEvent', listener);
     return () => ipcRenderer.removeListener('jewbot:cascadeEvent', listener);
   },
+  expandMentions: (text: string) => ipcRenderer.invoke('jewbot:expandMentions', text) as Promise<{ text: string; error?: string }>,
+  composerAdd: (payload: { path: string; proposed: string }) => ipcRenderer.invoke('jewbot:composerAdd', payload),
+  composerState: () => ipcRenderer.invoke('jewbot:composerState'),
+  composerDecide: (payload: { scope: 'file' | 'hunk'; path?: string; id?: string; decision: 'accept' | 'reject' }) =>
+    ipcRenderer.invoke('jewbot:composerDecide', payload),
+  composerApply: () => ipcRenderer.invoke('jewbot:composerApply'),
+  composerUndo: () => ipcRenderer.invoke('jewbot:composerUndo'),
+  gitRun: (payload: { action: string; args?: string[]; executionId?: string }) => ipcRenderer.invoke('jewbot:gitRun', payload),
+  gitConfirm: (payload: { action: 'push' | 'reset' | 'clean'; args?: string[] }) => ipcRenderer.invoke('jewbot:gitConfirm', payload),
+  gitSuggest: () => ipcRenderer.invoke('jewbot:gitSuggest') as Promise<{ message: string; error?: string }>,
   editorList: (rel?: string) => ipcRenderer.invoke('jewbot:editorList', rel) as Promise<string[]>,
   editorOpen: (rel: string) =>
     ipcRenderer.invoke('jewbot:editorOpen', rel) as Promise<{
@@ -180,6 +190,21 @@ contextBridge.exposeInMainWorld('jewbot', {
       active: string | null;
       labels: string[];
     }>,
+  editorInline: (payload: { path: string; fileText: string; selection: string; prompt: string }) =>
+    ipcRenderer.invoke('jewbot:editorInline', payload) as Promise<{
+      path: string;
+      original: string;
+      proposed: string;
+      unifiedDiff: string;
+      replacement: string;
+    }>,
+  editorInlineAccept: (proposal: {
+    path: string;
+    original: string;
+    proposed: string;
+    unifiedDiff: string;
+    replacement: string;
+  }) => ipcRenderer.invoke('jewbot:editorInlineAccept', proposal) as Promise<{ ok: boolean; path: string }>,
   editorComplete: (payload: { prefix: string; suffix: string }) =>
     ipcRenderer.invoke('jewbot:editorComplete', payload) as Promise<{ disabled: boolean; ghost: string }>,
   editorSave: (rel: string) =>

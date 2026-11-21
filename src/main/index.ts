@@ -16,7 +16,11 @@ import {
   SshStartResult,
 } from '../modules/ssh';
 import { FileWorkspace } from '../modules/files';
-import { completeInline, EditorSession, tabLabel } from '../modules/editor';
+import { acceptInline, completeInline, EditorSession, proposeInlineEdit, tabLabel } from '../modules/editor';
+import { expandMentions } from '../modules/semantic';
+import { ComposerBatch } from '../modules/composer';
+import { renderGitCommand, runGit, suggestCommitMessage, type GitAction } from '../modules/git';
+import type { InlineProposal } from '../modules/editor';
 import { ContextIndexer } from '../modules/context';
 import { AgentLoop, AgentStreamEvent, DestructiveConfirmRequest, EditConfirmRequest } from '../modules/agent';
 import { CascadeAgentOutcome, CascadeRunner, CascadeTask } from '../modules/cascade';
@@ -28,6 +32,7 @@ let projectRoot = resolveInitialRoot();
 let safety = defaultSafetyConfig(projectRoot);
 let files = new FileWorkspace(projectRoot);
 let editorSession = new EditorSession();
+let composerBatch = new ComposerBatch();
 let context = new ContextIndexer(projectRoot);
 const cascadeStoreRoot =
   process.env.JEWBOT_UI_SMOKE === '1' ? fs.mkdtempSync(path.join(os.tmpdir(), 'jewbot-m6-ui-')) : projectRoot;
@@ -76,6 +81,7 @@ function setProjectRoot(next: string): string {
   safety = defaultSafetyConfig(projectRoot);
   files = new FileWorkspace(projectRoot);
   editorSession = new EditorSession();
+  composerBatch = new ComposerBatch();
   context = new ContextIndexer(projectRoot);
   cascade.setWorkspace({ projectRoot, files, context });
   return projectRoot;
@@ -566,6 +572,93 @@ app.whenReady().then(async () => {
     return { canceled: false, projectRoot: next };
   });
 
+  function composerView() {
+    return {
+      files: composerBatch.files.map((file) => ({
+        path: file.path,
+        hunks: file.hunks.map((hunk) => ({
+          id: hunk.id,
+          path: hunk.path,
+          search: hunk.search,
+          replace: hunk.replace,
+          decision: hunk.decision,
+        })),
+      })),
+    };
+  }
+
+  ipcMain.handle('jewbot:composerAdd', async (_e, payload: { path?: string; proposed?: string }) => {
+    const rel = String(payload?.path ?? '');
+    let original = '';
+    try {
+      original = await files.read(rel);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT' && !(err instanceof Error && err.message.startsWith('read_file'))) throw err;
+    }
+    composerBatch.addFile(rel, original, String(payload?.proposed ?? ''));
+    return composerView();
+  });
+
+  ipcMain.handle('jewbot:composerState', async () => composerView());
+
+  ipcMain.handle('jewbot:composerDecide', async (_e, payload: { scope?: string; path?: string; id?: string; decision?: 'accept' | 'reject' }) => {
+    const decision = payload?.decision === 'reject' ? 'reject' : 'accept';
+    if (payload?.scope === 'file') {
+      if (decision === 'accept') composerBatch.acceptFile(String(payload.path ?? ''));
+      else composerBatch.rejectFile(String(payload.path ?? ''));
+    } else if (decision === 'accept') composerBatch.acceptHunk(String(payload?.id ?? ''));
+    else composerBatch.rejectHunk(String(payload?.id ?? ''));
+    return composerView();
+  });
+
+  ipcMain.handle('jewbot:composerApply', async () => {
+    const result = await composerBatch.apply(files);
+    return { ...result, ...composerView() };
+  });
+
+  ipcMain.handle('jewbot:composerUndo', async () => {
+    const result = await composerBatch.undo(files);
+    return { ...result, ...composerView() };
+  });
+
+  ipcMain.handle('jewbot:gitRun', async (_e, payload: { action?: GitAction; args?: string[]; executionId?: string }) => {
+    const action = payload?.action;
+    if (!action) throw new Error('git action is required');
+    return runGit(projectRoot, action, payload.args || [], payload.executionId);
+  });
+
+  ipcMain.handle('jewbot:gitConfirm', async (_e, payload: { action?: GitAction; args?: string[] }) => {
+    const action = payload?.action;
+    if (action !== 'push' && action !== 'reset' && action !== 'clean') {
+      throw new Error('Only push, reset, and clean use the confirm grant.');
+    }
+    const args = payload.args || [];
+    const command = renderGitCommand(action, args);
+    const { executionId } = issueConfirmation(command);
+    return runGit(projectRoot, action, args, executionId);
+  });
+
+  ipcMain.handle('jewbot:gitSuggest', async () => {
+    const diff = await runGit(projectRoot, 'diff');
+    const staged = await runGit(projectRoot, 'diff', ['--cached']);
+    const body = `${staged.stdout}\n${diff.stdout}`.trim();
+    try {
+      const message = await suggestCommitMessage(body || 'empty diff');
+      return { message };
+    } catch (err) {
+      return { message: '', error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('jewbot:expandMentions', async (_e, text: string) => {
+    try {
+      return { text: await expandMentions(projectRoot, String(text ?? '')) };
+    } catch (err) {
+      return { text: String(text ?? ''), error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   ipcMain.handle('jewbot:editorList', async (_e, rel?: string) => files.listDir(rel || '.'));
 
   ipcMain.handle('jewbot:editorOpen', async (_e, rel: string) => {
@@ -582,6 +675,24 @@ app.whenReady().then(async () => {
   ipcMain.handle('jewbot:editorComplete', async (_e, payload: { prefix?: string; suffix?: string }) => {
     const text = await completeInline(String(payload?.prefix ?? ''), String(payload?.suffix ?? ''));
     return { disabled: text === null, ghost: text || '' };
+  });
+
+  ipcMain.handle('jewbot:editorInline', async (_e, payload: { path?: string; fileText?: string; selection?: string; prompt?: string }) => {
+    return proposeInlineEdit({
+      path: String(payload?.path ?? ''),
+      fileText: String(payload?.fileText ?? ''),
+      selection: String(payload?.selection ?? ''),
+      prompt: String(payload?.prompt ?? ''),
+    });
+  });
+
+  ipcMain.handle('jewbot:editorInlineAccept', async (_e, proposal: InlineProposal) => {
+    await acceptInline(files, proposal);
+    const tab = editorSession.open(proposal.path, proposal.proposed);
+    editorSession.editHuman(proposal.path, proposal.proposed);
+    tab.savedText = proposal.proposed;
+    tab.dirty = false;
+    return { ok: true, path: proposal.path, labels: editorSession.labels() };
   });
 
   ipcMain.handle('jewbot:editorSave', async (_e, rel: string) => editorSession.save(String(rel ?? ''), files));
