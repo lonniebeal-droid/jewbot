@@ -2,6 +2,15 @@
 
 All notable changes to Jewbot are listed here. The packaged app version comes from `package.json`.
 
+## 0.2.0 (unreleased)
+
+### M9 — Editor
+
+- Monaco pane (`#monacoEditor`) with file tabs and a project tree.
+- Dirty tabs show a `•` marker.
+- Ctrl/Cmd+S writes human typing immediately inside the project jail.
+- Agent text stays on the M3 diff until the owner presses Accept.
+
 ## 0.1.0 — 2026-11-10
 
 First installable build. Milestones M0 through M7, plus the local modules and LAN routing below. Installers are unsigned. Code signing and Apple notarization are off because they cost money. That stays an owner decision. Spend stays $0.

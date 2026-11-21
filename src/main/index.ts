@@ -16,6 +16,7 @@ import {
   SshStartResult,
 } from '../modules/ssh';
 import { FileWorkspace } from '../modules/files';
+import { EditorSession, tabLabel } from '../modules/editor';
 import { ContextIndexer } from '../modules/context';
 import { AgentLoop, AgentStreamEvent, DestructiveConfirmRequest, EditConfirmRequest } from '../modules/agent';
 import { CascadeAgentOutcome, CascadeRunner, CascadeTask } from '../modules/cascade';
@@ -26,6 +27,7 @@ let mainWindow: BrowserWindow | null = null;
 let projectRoot = resolveInitialRoot();
 let safety = defaultSafetyConfig(projectRoot);
 let files = new FileWorkspace(projectRoot);
+let editorSession = new EditorSession();
 let context = new ContextIndexer(projectRoot);
 const cascadeStoreRoot =
   process.env.JEWBOT_UI_SMOKE === '1' ? fs.mkdtempSync(path.join(os.tmpdir(), 'jewbot-m6-ui-')) : projectRoot;
@@ -73,6 +75,7 @@ function setProjectRoot(next: string): string {
   projectRoot = abs;
   safety = defaultSafetyConfig(projectRoot);
   files = new FileWorkspace(projectRoot);
+  editorSession = new EditorSession();
   context = new ContextIndexer(projectRoot);
   cascade.setWorkspace({ projectRoot, files, context });
   return projectRoot;
@@ -561,6 +564,26 @@ app.whenReady().then(async () => {
     }
     const next = setProjectRoot(result.filePaths[0]);
     return { canceled: false, projectRoot: next };
+  });
+
+  ipcMain.handle('jewbot:editorList', async (_e, rel?: string) => files.listDir(rel || '.'));
+
+  ipcMain.handle('jewbot:editorOpen', async (_e, rel: string) => {
+    const text = await files.read(String(rel ?? ''));
+    const tab = editorSession.open(String(rel), text);
+    return { text: tab.text, dirty: tab.dirty, origin: tab.origin, active: editorSession.active, labels: editorSession.labels() };
+  });
+
+  ipcMain.handle('jewbot:editorEdit', async (_e, payload: { path?: string; text?: string }) => {
+    const tab = editorSession.editHuman(String(payload?.path ?? ''), String(payload?.text ?? ''));
+    return { dirty: tab.dirty, label: tabLabel(tab), origin: tab.origin, active: editorSession.active, labels: editorSession.labels() };
+  });
+
+  ipcMain.handle('jewbot:editorSave', async (_e, rel: string) => editorSession.save(String(rel ?? ''), files));
+
+  ipcMain.handle('jewbot:editorAccept', async (_e, rel: string) => {
+    const tab = await editorSession.acceptAgent(String(rel ?? ''), files);
+    return { ok: true, path: tab.path, labels: editorSession.labels() };
   });
 
   ipcMain.handle('jewbot:agentRun', async (_e, goal: string) => {

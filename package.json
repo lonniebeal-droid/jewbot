@@ -39,8 +39,9 @@
     "test:echo": "npx --yes tsx scripts/smoke-echo.ts",
     "test:twinrent": "npx --yes tsx scripts/smoke-twinrent.ts",
     "test:route": "npx --yes tsx scripts/smoke-route.ts",
+    "test:m9": "npx --yes tsx scripts/smoke-m9.ts",
     "test:ui": "npm run build && JEWBOT_UI_SMOKE=1 electron . --no-sandbox --disable-gpu",
-    "test": "npm run test:safety && npm run test:m1 && npm run test:m2 && npm run test:m3 && npm run test:m4 && npm run test:m5 && npm run test:m6 && npm run test:muse && npm run test:m8 && npm run test:fleet && npm run test:street && npm run test:portfolio && npm run test:music && npm run test:echo && npm run test:twinrent && npm run test:route"
+    "test": "npm run test:safety && npm run test:m1 && npm run test:m2 && npm run test:m3 && npm run test:m4 && npm run test:m5 && npm run test:m6 && npm run test:muse && npm run test:m8 && npm run test:fleet && npm run test:street && npm run test:portfolio && npm run test:music && npm run test:echo && npm run test:twinrent && npm run test:route && npm run test:m9"
   },
   "engines": {
     "node": ">=20"
@@ -48,6 +49,7 @@
   "dependencies": {
     "diff": "^7.0.0",
     "ignore": "^6.0.2",
+    "monaco-editor": "^0.52.2",
     "ssh2": "^1.16.0",
     "uuid": "^11.1.0"
   },
@@ -58,8 +60,8 @@
     "@types/ssh2": "^1.15.4",
     "electron": "^35.0.0",
     "electron-builder": "^26.18.0",
-    "typescript": "^5.8.2",
-    "tsx": "^4.20.6"
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.2"
   },
   "optionalDependencies": {
     "node-pty": "^1.0.0"
