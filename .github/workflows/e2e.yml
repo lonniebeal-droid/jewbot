@@ -1,6 +1,6 @@
 # Free GitHub-hosted runners only. No repository secrets.
-# The Ollama job installs the official local server and pulls two small models.
-# The editor job opens the real window under Xvfb and waits for Monaco.
+# The Ollama job exercises the real local agent, FIM, and embeddings.
+# The editor job opens the real window under Xvfb.
 
 name: End to end
 
@@ -40,15 +40,15 @@ jobs:
           echo "Ollama did not start"
           cat /tmp/ollama.log || true
           exit 1
-      - name: Pull tiny local models
+      - name: Pull small local models
         run: |
           set -euo pipefail
-          ollama pull qwen2.5-coder:0.5b
+          ollama pull qwen2.5-coder:1.5b
           ollama pull nomic-embed-text
       - name: Headless agent, FIM, and embed
         env:
-          JEWBOT_MODEL: qwen2.5-coder:0.5b
-          JEWBOT_COMPLETE_MODEL: qwen2.5-coder:0.5b
+          JEWBOT_MODEL: qwen2.5-coder:1.5b
+          JEWBOT_COMPLETE_MODEL: qwen2.5-coder:1.5b
           JEWBOT_EMBED_MODEL: nomic-embed-text
           OLLAMA_HOST: http://127.0.0.1:11434
         run: npx --yes tsx scripts/e2e-ollama.ts
