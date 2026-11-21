@@ -2,7 +2,9 @@
 
 All notable changes to Jewbot are listed here. The packaged app version comes from `package.json`.
 
-## 0.4.0 (unreleased)
+## 0.4.0 — 2026-11-21
+
+Local MCP, background tasks on a LAN host, and offline docs. Installers stay unsigned. This changelog does not push a git tag.
 
 ### M19 — MCP client
 

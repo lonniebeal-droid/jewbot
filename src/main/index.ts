@@ -418,8 +418,8 @@ async function runUiSmoke(win: BrowserWindow): Promise<void> {
       report.hasBridge &&
       report.missing.length === 0 &&
       report.milestone === 'M7' &&
-      report.version === '0.3.0' &&
-      (report.aboutText || '').includes('0.3.0') &&
+      report.version === '0.4.0' &&
+      (report.aboutText || '').includes('0.4.0') &&
       (report.aboutText || '').includes('unsigned') &&
       !!report.projectRoot &&
       report.sendEnabled &&
