@@ -8,6 +8,7 @@
  * `assertLocalSpendOnly` from safety.
  */
 
+import { featureModel } from '../model-manager/settings';
 import { assertLocalSpendOnly } from '../safety';
 
 export interface ChatMessage {
@@ -190,7 +191,7 @@ export function assertOllamaAllowed(cfg: OllamaConfig): void {
 export function defaultOllamaConfig(): OllamaConfig {
   return {
     host: normalizeOllamaHost(process.env.OLLAMA_HOST || DEFAULT_HOST),
-    model: (process.env.JEWBOT_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL,
+    model: (process.env.JEWBOT_MODEL || featureModel('chat') || DEFAULT_MODEL).trim() || DEFAULT_MODEL,
     allowPaidApis: process.env.JEWBOT_ALLOW_PAID === '1',
   };
 }

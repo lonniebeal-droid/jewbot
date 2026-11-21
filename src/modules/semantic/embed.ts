@@ -3,6 +3,7 @@
  * assertLocalSpendOnly runs before the socket opens.
  */
 
+import { featureModel } from '../model-manager/settings';
 import { assertLocalSpendOnly } from '../safety';
 import { assertOllamaAllowed } from '../llm/ollama';
 import { assertRoutableOllamaHost } from '../llm/route';
@@ -18,7 +19,7 @@ export async function embedTexts(options: {
   const host = assertRoutableOllamaHost(options.host);
   const decision = assertLocalSpendOnly(false);
   if (decision.ok) throw new Error('Embeddings keep the spend gate closed.');
-  const model = options.model?.trim() || EMBED_MODEL;
+  const model = options.model?.trim() || process.env.JEWBOT_EMBED_MODEL?.trim() || featureModel('embeddings') || EMBED_MODEL;
   if (!options.input.length) return [];
   assertOllamaAllowed({ host, model, allowPaidApis: false, allowPrivateLan: true });
   if (typeof fetch !== 'function') throw new Error('Global fetch is unavailable; cannot reach Ollama.');

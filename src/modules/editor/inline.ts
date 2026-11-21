@@ -5,6 +5,7 @@
 
 import { createTwoFilesPatch } from 'diff';
 import type { FileWorkspace } from '../files';
+import { featureModel } from '../model-manager/settings';
 import { assertLocalSpendOnly } from '../safety';
 import { chatOnce } from '../llm/ollama';
 import { assertRoutableOllamaHost } from '../llm/route';
@@ -37,7 +38,7 @@ export async function proposeInlineEdit(options: {
         { role: 'system', content: 'Return only the replacement for the selected code. Do not wrap it in markdown.' },
         { role: 'user', content: `Instruction: ${options.prompt}\n\nSelection:\n${selection}` },
       ],
-      { host, model: process.env.JEWBOT_MODEL || 'qwen2.5-coder:7b', allowPaidApis: false, allowPrivateLan: true },
+      { host, model: process.env.JEWBOT_INLINE_MODEL || process.env.JEWBOT_MODEL || featureModel('inlineEdit') || 'qwen2.5-coder:7b', allowPaidApis: false, allowPrivateLan: true },
     )
   ).trim();
   const proposed = options.fileText.slice(0, at) + replacement + options.fileText.slice(at + selection.length);
