@@ -19,6 +19,7 @@ import { FileWorkspace } from '../modules/files';
 import { acceptInline, completeInline, EditorSession, proposeInlineEdit, tabLabel } from '../modules/editor';
 import { expandMentions } from '../modules/semantic';
 import { ComposerBatch } from '../modules/composer';
+import { renderGitCommand, runGit, suggestCommitMessage, type GitAction } from '../modules/git';
 import type { InlineProposal } from '../modules/editor';
 import { ContextIndexer } from '../modules/context';
 import { AgentLoop, AgentStreamEvent, DestructiveConfirmRequest, EditConfirmRequest } from '../modules/agent';
@@ -619,6 +620,35 @@ app.whenReady().then(async () => {
   ipcMain.handle('jewbot:composerUndo', async () => {
     const result = await composerBatch.undo(files);
     return { ...result, ...composerView() };
+  });
+
+  ipcMain.handle('jewbot:gitRun', async (_e, payload: { action?: GitAction; args?: string[]; executionId?: string }) => {
+    const action = payload?.action;
+    if (!action) throw new Error('git action is required');
+    return runGit(projectRoot, action, payload.args || [], payload.executionId);
+  });
+
+  ipcMain.handle('jewbot:gitConfirm', async (_e, payload: { action?: GitAction; args?: string[] }) => {
+    const action = payload?.action;
+    if (action !== 'push' && action !== 'reset' && action !== 'clean') {
+      throw new Error('Only push, reset, and clean use the confirm grant.');
+    }
+    const args = payload.args || [];
+    const command = renderGitCommand(action, args);
+    const { executionId } = issueConfirmation(command);
+    return runGit(projectRoot, action, args, executionId);
+  });
+
+  ipcMain.handle('jewbot:gitSuggest', async () => {
+    const diff = await runGit(projectRoot, 'diff');
+    const staged = await runGit(projectRoot, 'diff', ['--cached']);
+    const body = `${staged.stdout}\n${diff.stdout}`.trim();
+    try {
+      const message = await suggestCommitMessage(body || 'empty diff');
+      return { message };
+    } catch (err) {
+      return { message: '', error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('jewbot:expandMentions', async (_e, text: string) => {

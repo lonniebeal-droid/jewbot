@@ -135,6 +135,9 @@ declare global {
       composerDecide: (payload: { scope: 'file' | 'hunk'; path?: string; id?: string; decision: 'accept' | 'reject' }) => Promise<unknown>;
       composerApply: () => Promise<unknown>;
       composerUndo: () => Promise<unknown>;
+      gitRun: (payload: { action: string; args?: string[]; executionId?: string }) => Promise<unknown>;
+      gitConfirm: (payload: { action: 'push' | 'reset' | 'clean'; args?: string[] }) => Promise<unknown>;
+      gitSuggest: () => Promise<{ message: string; error?: string }>;
       editorList: (rel?: string) => Promise<string[]>;
       editorOpen: (rel: string) => Promise<{
         text: string;

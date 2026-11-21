@@ -170,6 +170,9 @@ contextBridge.exposeInMainWorld('jewbot', {
     ipcRenderer.invoke('jewbot:composerDecide', payload),
   composerApply: () => ipcRenderer.invoke('jewbot:composerApply'),
   composerUndo: () => ipcRenderer.invoke('jewbot:composerUndo'),
+  gitRun: (payload: { action: string; args?: string[]; executionId?: string }) => ipcRenderer.invoke('jewbot:gitRun', payload),
+  gitConfirm: (payload: { action: 'push' | 'reset' | 'clean'; args?: string[] }) => ipcRenderer.invoke('jewbot:gitConfirm', payload),
+  gitSuggest: () => ipcRenderer.invoke('jewbot:gitSuggest') as Promise<{ message: string; error?: string }>,
   editorList: (rel?: string) => ipcRenderer.invoke('jewbot:editorList', rel) as Promise<string[]>,
   editorOpen: (rel: string) =>
     ipcRenderer.invoke('jewbot:editorOpen', rel) as Promise<{
