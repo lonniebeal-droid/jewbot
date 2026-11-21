@@ -16,4 +16,5 @@ export * as twinrent from './twinrent';
 export * as editor from './editor';
 export * as semantic from './semantic';
 export * as composer from './composer';
+export * as git from './git';
 export * as plugin from './plugin';
