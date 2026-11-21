@@ -137,6 +137,8 @@ declare global {
       modelsSettings: (payload?: { models: Record<string, string> }) => Promise<{ models: Record<string, string> }>;
       backgroundRun: (payload: { host: string; model: string; goal: string }) => Promise<{ ok: boolean; error?: string; task?: { id: string; diff?: string; status: string } }>;
       backgroundAccept: (id: string) => Promise<{ ok: boolean; error?: string }>;
+      mcpList: () => Promise<{ servers: Array<{ name: string; allow: boolean; line: string }>; error?: string }>;
+      mcpAllow: (payload: { name: string; allow: boolean }) => Promise<{ ok: boolean; error?: string }>;
       expandMentions: (text: string) => Promise<{ text: string; error?: string }>;
       composerAdd: (payload: { path: string; proposed: string }) => Promise<unknown>;
       composerState: () => Promise<unknown>;
