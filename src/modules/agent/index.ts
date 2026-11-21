@@ -8,6 +8,7 @@ import { chatStream, ChatMessage, defaultOllamaConfig, OllamaConfig } from '../l
 import { DiffPreview, EditSpec, FileWorkspace, SecretPathError } from '../files';
 import { formatTerminalObservation, TerminalResult, TerminalSession } from '../terminal';
 import { checkFleet, formatFleetHealth, formatFleetList, listFleet } from '../fleet-triage';
+import { formatSemanticSearch, semanticSearch } from '../semantic';
 import {
   formatPortfolioList,
   formatPortfolioMark,
@@ -369,6 +370,10 @@ export class AgentLoop {
           return await this.observeMusicNext(tool, signal);
         case 'music_mark':
           return await this.observeMusicMark(tool, signal);
+        case 'semantic_search':
+          return formatSemanticSearch(
+            await semanticSearch(this.deps.files.projectRoot, String(tool.args.query ?? ''), Number(tool.args.k ?? 5)),
+          );
         case 'ask_owner':
           return String(tool.args.question ?? 'Owner input required');
         default:
