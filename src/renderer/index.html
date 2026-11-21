@@ -143,6 +143,25 @@
           <button class="secondary" id="refresh" type="button">Refresh</button>
         </div>
         <pre id="status">Loading…</pre>
+        <div id="modelsPanel">
+          <div class="row">
+            <input id="modelsHost" placeholder="http://127.0.0.1:11434" />
+            <button class="secondary" id="modelsList" type="button">Models</button>
+          </div>
+          <div class="row">
+            <input id="modelsName" placeholder="model name" />
+            <button class="secondary" id="modelsPull" type="button">Pull</button>
+            <button class="danger" id="modelsDelete" type="button">Delete</button>
+          </div>
+          <div class="row">
+            <input id="modelChat" placeholder="chat model" />
+            <input id="modelComplete" placeholder="autocomplete" />
+            <input id="modelEmbed" placeholder="embeddings" />
+            <input id="modelInline" placeholder="inline edit" />
+            <button class="secondary" id="modelsSave" type="button">Save models</button>
+          </div>
+          <pre id="modelsOut" class="term-out"></pre>
+        </div>
       </div>
       <div>
         <div class="row">
@@ -289,5 +308,6 @@ Spend: $0 · local Ollama only</pre>
   <script src="./editor.js"></script>
   <script src="./composer.js"></script>
   <script src="./git.js"></script>
+  <script src="./models.js"></script>
 </body>
 </html>

@@ -18,6 +18,7 @@ import {
 import { FileWorkspace } from '../modules/files';
 import { acceptInline, completeInline, EditorSession, proposeInlineEdit, tabLabel } from '../modules/editor';
 import { expandMentions } from '../modules/semantic';
+import { deleteLocalModel, listLocalModels, pullLocalModel, loadSettings, saveFeatureModels } from '../modules/model-manager';
 import { loadRules, rulesEnabled, setRulesEnabled } from '../modules/rules';
 import { ComposerBatch } from '../modules/composer';
 import { assertAllowlisted, RemoteWorkspace } from '../modules/remote';
@@ -661,6 +662,50 @@ app.whenReady().then(async () => {
   ipcMain.handle('jewbot:rulesSet', async (_e, enabled: boolean) => {
     setRulesEnabled(enabled === true);
     return { enabled: rulesEnabled() };
+  });
+
+  ipcMain.handle('jewbot:modelsList', async (_e, host: string) => {
+    try {
+      return { models: await listLocalModels(String(host || 'http://127.0.0.1:11434')) };
+    } catch (err) {
+      return { models: [], error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('jewbot:modelsPull', async (_e, payload: { host?: string; name?: string }) => {
+    try {
+      await pullLocalModel(String(payload?.host || 'http://127.0.0.1:11434'), String(payload?.name || ''));
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('jewbot:modelsDelete', async (_e, payload: { host?: string; name?: string }) => {
+    const host = String(payload?.host || 'http://127.0.0.1:11434');
+    const name = String(payload?.name || '');
+    try {
+      const preview = await deleteLocalModel(host, name);
+      if (!preview.needsConfirmation) return preview;
+      const { executionId } = issueConfirmation(preview.command);
+      return await deleteLocalModel(host, name, executionId);
+    } catch (err) {
+      return { ok: false, needsConfirmation: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('jewbot:modelsSettings', async (_e, payload?: { models?: Record<string, string> }) => {
+    if (!payload?.models) {
+      const models = loadSettings().models;
+      return { models: models && typeof models === 'object' ? models : {} };
+    }
+    const saved = saveFeatureModels({
+      chat: payload.models.chat,
+      autocomplete: payload.models.autocomplete,
+      embeddings: payload.models.embeddings,
+      inlineEdit: payload.models.inlineEdit,
+    });
+    return { models: saved.models };
   });
 
   ipcMain.handle('jewbot:expandMentions', async (_e, text: string) => {
