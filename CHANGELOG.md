@@ -4,6 +4,12 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 
 ## 0.3.0 (unreleased)
 
+### M17 — Model manager
+
+- List and pull models on a local or LAN Ollama host. Public hosts are refused.
+- Delete uses the confirm grant. The window asks before the grant is minted.
+- Chat, autocomplete, embeddings, and inline edit read their model from `~/.jewbot/settings.json` when that file sets one. An env override still wins. Other keys in the file are left in place.
+
 ### Window wiring
 
 - Ctrl/Cmd+K in the editor asks local Ollama for an inline edit and shows Accept / Reject.

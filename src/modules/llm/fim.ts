@@ -4,6 +4,7 @@
  * are refused even when JEWBOT_ALLOW_PAID=1.
  */
 
+import { featureModel } from '../models/settings';
 import { assertLocalSpendOnly } from '../safety';
 import { assertOllamaAllowed } from './ollama';
 import { assertRoutableOllamaHost } from './route';
@@ -11,7 +12,7 @@ import { assertRoutableOllamaHost } from './route';
 export const DEFAULT_COMPLETE_MODEL = 'qwen2.5-coder:1.5b';
 
 export function completionModel(explicit?: string): string {
-  const named = explicit?.trim() || process.env.JEWBOT_COMPLETE_MODEL?.trim();
+  const named = explicit?.trim() || process.env.JEWBOT_COMPLETE_MODEL?.trim() || featureModel('autocomplete');
   return named || DEFAULT_COMPLETE_MODEL;
 }
 
