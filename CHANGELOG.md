@@ -4,6 +4,11 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 
 ## 0.3.0 (unreleased)
 
+### M18 — Rules
+
+- `.jewbot/rules.md` and a `rules.md` in the active folder and its parents are added to the agent system prompt.
+- The Rules checkbox writes `rules` in `~/.jewbot/settings.json`. Off means those files stay out of the prompt. Missing settings leave rules on. Other keys in the file stay put.
+
 ### Window wiring
 
 - Ctrl/Cmd+K in the editor asks local Ollama for an inline edit and shows Accept / Reject.

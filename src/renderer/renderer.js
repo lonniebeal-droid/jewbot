@@ -241,6 +241,11 @@ async function refresh() {
     if (window.jewbot.cascadeList) renderCascade(await window.jewbot.cascadeList());
     await refreshSsh();
     await refreshModules();
+    if (window.jewbot.rulesGet) {
+      const rules = await window.jewbot.rulesGet();
+      const box = document.getElementById('rulesEnabled');
+      if (box) box.checked = rules.enabled !== false;
+    }
   } catch (e) {
     statusEl.textContent = String(e);
   }
@@ -929,6 +934,10 @@ document.getElementById('send').onclick = send;
 document.getElementById('stop').onclick = () => {
   if (activeRequest && window.jewbot) window.jewbot.cancelStream(activeRequest);
   if (window.jewbot && window.jewbot.cascadeStop) void window.jewbot.cascadeStop();
+};
+document.getElementById('rulesEnabled').onchange = () => {
+  const box = document.getElementById('rulesEnabled');
+  if (window.jewbot.rulesSet) void window.jewbot.rulesSet(box.checked);
 };
 document.getElementById('modeAgent').onclick = () => setMode('agent');
 document.getElementById('modeChat').onclick = () => setMode('chat');

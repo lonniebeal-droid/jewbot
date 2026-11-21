@@ -18,6 +18,7 @@ import {
 import { FileWorkspace } from '../modules/files';
 import { acceptInline, completeInline, EditorSession, proposeInlineEdit, tabLabel } from '../modules/editor';
 import { expandMentions } from '../modules/semantic';
+import { loadRules, rulesEnabled, setRulesEnabled } from '../modules/rules';
 import { ComposerBatch } from '../modules/composer';
 import { renderGitCommand, runGit, suggestCommitMessage, type GitAction } from '../modules/git';
 import type { InlineProposal } from '../modules/editor';
@@ -649,6 +650,13 @@ app.whenReady().then(async () => {
     } catch (err) {
       return { message: '', error: err instanceof Error ? err.message : String(err) };
     }
+  });
+
+  ipcMain.handle('jewbot:rulesGet', async () => ({ enabled: rulesEnabled(), text: loadRules(projectRoot) }));
+
+  ipcMain.handle('jewbot:rulesSet', async (_e, enabled: boolean) => {
+    setRulesEnabled(enabled === true);
+    return { enabled: rulesEnabled() };
   });
 
   ipcMain.handle('jewbot:expandMentions', async (_e, text: string) => {

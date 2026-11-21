@@ -163,6 +163,8 @@ contextBridge.exposeInMainWorld('jewbot', {
     ipcRenderer.on('jewbot:cascadeEvent', listener);
     return () => ipcRenderer.removeListener('jewbot:cascadeEvent', listener);
   },
+  rulesGet: () => ipcRenderer.invoke('jewbot:rulesGet') as Promise<{ enabled: boolean; text: string }>,
+  rulesSet: (enabled: boolean) => ipcRenderer.invoke('jewbot:rulesSet', enabled) as Promise<{ enabled: boolean }>,
   expandMentions: (text: string) => ipcRenderer.invoke('jewbot:expandMentions', text) as Promise<{ text: string; error?: string }>,
   composerAdd: (payload: { path: string; proposed: string }) => ipcRenderer.invoke('jewbot:composerAdd', payload),
   composerState: () => ipcRenderer.invoke('jewbot:composerState'),

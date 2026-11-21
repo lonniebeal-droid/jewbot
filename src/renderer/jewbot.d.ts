@@ -129,6 +129,8 @@ declare global {
       cascadeStop: () => Promise<{ runState?: string }>;
       cascadeRequeue: (id: string) => Promise<{ ok: boolean; reason?: string }>;
       cascadeRemove: (id: string) => Promise<{ ok: boolean; reason?: string }>;
+      rulesGet: () => Promise<{ enabled: boolean; text: string }>;
+      rulesSet: (enabled: boolean) => Promise<{ enabled: boolean }>;
       expandMentions: (text: string) => Promise<{ text: string; error?: string }>;
       composerAdd: (payload: { path: string; proposed: string }) => Promise<unknown>;
       composerState: () => Promise<unknown>;
