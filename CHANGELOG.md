@@ -10,6 +10,13 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 - The file tree, editor save, and text search stay inside that remote root.
 - A remote terminal command is `cd` into the folder, then the command. Host-key confirm and the destructive grant still apply. Unknown hosts are refused.
 
+### M16 — Agent loop v2
+
+- Plan, act, and observe with a step budget (`maxSteps` or `JEWBOT_AGENT_MAX_STEPS`, default 12).
+- Invalid JSON tool calls from a small local model are retried before the step is spent.
+- Fix tests runs the command through the terminal first. Destructive commands stay behind the confirm grant.
+- Stop still aborts the running request.
+
 ### Window wiring
 
 - Ctrl/Cmd+K in the editor asks local Ollama for an inline edit and shows Accept / Reject.

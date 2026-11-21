@@ -901,6 +901,10 @@ async function send() {
     return;
   }
   let text = typed;
+  const fixBtn = document.getElementById('fixTests');
+  if (fixBtn && fixBtn.classList.contains('active') && mode === 'agent' && !/^fix tests:/i.test(text)) {
+    text = `fix tests: npm test\n${text}`;
+  }
   if (window.jewbot.expandMentions) {
     try {
       const expanded = await window.jewbot.expandMentions(typed);
@@ -929,6 +933,9 @@ document.getElementById('send').onclick = send;
 document.getElementById('stop').onclick = () => {
   if (activeRequest && window.jewbot) window.jewbot.cancelStream(activeRequest);
   if (window.jewbot && window.jewbot.cascadeStop) void window.jewbot.cascadeStop();
+};
+document.getElementById('fixTests').onclick = () => {
+  document.getElementById('fixTests').classList.toggle('active');
 };
 document.getElementById('modeAgent').onclick = () => setMode('agent');
 document.getElementById('modeChat').onclick = () => setMode('chat');
