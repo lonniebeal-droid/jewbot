@@ -180,6 +180,8 @@ contextBridge.exposeInMainWorld('jewbot', {
       active: string | null;
       labels: string[];
     }>,
+  editorComplete: (payload: { prefix: string; suffix: string }) =>
+    ipcRenderer.invoke('jewbot:editorComplete', payload) as Promise<{ disabled: boolean; ghost: string }>,
   editorSave: (rel: string) =>
     ipcRenderer.invoke('jewbot:editorSave', rel) as Promise<{ kind: 'clean' | 'saved' | 'review'; path: string; preview?: { unifiedDiff: string } }>,
   editorAccept: (rel: string) => ipcRenderer.invoke('jewbot:editorAccept', rel) as Promise<{ ok: boolean; path: string }>,

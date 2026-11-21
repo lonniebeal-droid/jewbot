@@ -16,7 +16,7 @@ import {
   SshStartResult,
 } from '../modules/ssh';
 import { FileWorkspace } from '../modules/files';
-import { EditorSession, tabLabel } from '../modules/editor';
+import { completeInline, EditorSession, tabLabel } from '../modules/editor';
 import { ContextIndexer } from '../modules/context';
 import { AgentLoop, AgentStreamEvent, DestructiveConfirmRequest, EditConfirmRequest } from '../modules/agent';
 import { CascadeAgentOutcome, CascadeRunner, CascadeTask } from '../modules/cascade';
@@ -577,6 +577,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('jewbot:editorEdit', async (_e, payload: { path?: string; text?: string }) => {
     const tab = editorSession.editHuman(String(payload?.path ?? ''), String(payload?.text ?? ''));
     return { dirty: tab.dirty, label: tabLabel(tab), origin: tab.origin, active: editorSession.active, labels: editorSession.labels() };
+  });
+
+  ipcMain.handle('jewbot:editorComplete', async (_e, payload: { prefix?: string; suffix?: string }) => {
+    const text = await completeInline(String(payload?.prefix ?? ''), String(payload?.suffix ?? ''));
+    return { disabled: text === null, ghost: text || '' };
   });
 
   ipcMain.handle('jewbot:editorSave', async (_e, rel: string) => editorSession.save(String(rel ?? ''), files));

@@ -5,6 +5,8 @@
 
 import type { JewbotModule } from '../plugin/types';
 
+export { completeInline, createCompletionController } from './complete';
+export type { CompletionController, GhostState } from './complete';
 export { bindMonaco, MONACO_CONTAINER_ID, MONACO_EDITOR_OPTIONS } from './monaco';
 export type { MonacoBinding, MonacoLike } from './monaco';
 export { EditorSession, tabLabel } from './session';
