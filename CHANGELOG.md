@@ -10,6 +10,7 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 - The chat box expands `@file`, `@folder`, and `@codebase` with `expandMentions` before send.
 - The window has a composer panel: add the editor buffer, accept or reject each file or hunk, apply, and undo the batch.
 - A git sidebar runs status, diff, stage, unstage, commit, and branch switch. Push, reset, and clean ask first and use the confirm grant. Commit does not push.
+- `npm run build` copies Monaco `vs/` into `dist/renderer` and fails if that package is missing, so dev and packaged builds mount the editor.
 
 ## 0.2.0 — 2026-11-21
 

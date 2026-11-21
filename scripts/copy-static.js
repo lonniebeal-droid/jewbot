@@ -19,7 +19,13 @@ for (const file of files) {
 
 const monacoSrc = path.join(root, "node_modules", "monaco-editor", "min", "vs");
 const monacoDest = path.join(outDir, "vs");
-if (fs.existsSync(monacoSrc)) {
-  fs.cpSync(monacoSrc, monacoDest, { recursive: true });
-  console.log("copied monaco-editor/min/vs -> dist/renderer/vs");
+if (!fs.existsSync(path.join(monacoSrc, "loader.js"))) {
+  console.error("monaco-editor/min/vs/loader.js is missing. Install monaco-editor before building.");
+  process.exit(1);
 }
+fs.cpSync(monacoSrc, monacoDest, { recursive: true });
+if (!fs.existsSync(path.join(monacoDest, "loader.js"))) {
+  console.error("Monaco vs/ was not copied into dist/renderer.");
+  process.exit(1);
+}
+console.log("copied monaco-editor/min/vs -> dist/renderer/vs");

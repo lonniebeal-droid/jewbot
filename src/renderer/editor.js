@@ -28,6 +28,7 @@
     surface.addEventListener('input', () => {
       if (!active || !window.jewbot.editorEdit) return;
       window.jewbot.editorEdit({ path: active, text: surface.value }).then(renderTabs).catch(() => {});
+      publishBuffer();
       scheduleGhost();
     });
     surface.addEventListener('keydown', (event) => {
@@ -124,6 +125,7 @@
     active = info.active;
     ensureSurface().value = info.text || '';
     renderTabs(info);
+    publishBuffer();
   }
 
   async function refreshTree() {
