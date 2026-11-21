@@ -1,6 +1,6 @@
 /**
  * Headless Ollama check for CI. Requires a local server and two pulled models:
- * qwen2.5-coder:0.5b for the agent and fill-in-the-middle, nomic-embed-text for embeddings.
+ * qwen2.5-coder:1.5b for the agent and fill-in-the-middle, nomic-embed-text for embeddings.
  * Not part of `npm test`.
  */
 import fs from 'node:fs/promises';
@@ -15,7 +15,7 @@ import { defaultSshManager } from '../src/modules/ssh';
 import { defaultTerminal } from '../src/modules/terminal';
 
 const HOST = 'http://127.0.0.1:11434';
-const CHAT_MODEL = process.env.JEWBOT_MODEL || 'qwen2.5-coder:0.5b';
+const CHAT_MODEL = process.env.JEWBOT_MODEL || 'qwen2.5-coder:1.5b';
 const EMBED_MODEL = process.env.JEWBOT_EMBED_MODEL || 'nomic-embed-text';
 
 function expect(cond: boolean, msg: string) {
@@ -39,8 +39,8 @@ async function main() {
   const middle = await generateFim({
     host: HOST,
     model: CHAT_MODEL,
-    prompt: 'function add(a, b) {\n  return ',
-    suffix: ';\n}\n',
+    prompt: 'function add(a, b) {\\n  return ',
+    suffix: ';\\n}\\n',
   });
   expect(middle.trim().length > 0, 'FIM returned an empty completion');
 
@@ -48,52 +48,54 @@ async function main() {
   expect(Array.isArray(vector) && vector.length > 8, 'embed call did not return a vector');
 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jewbot-e2e-'));
-  await fs.writeFile(path.join(root, 'hello.txt'), 'hello\n');
-  await fs.writeFile(
-    path.join(root, 'check.js'),
-    "const fs=require('fs');const t=fs.readFileSync('hello.txt','utf8');if(t!=='hello jewbot\\n')process.exit(1);console.log('e2e-ok');\n",
-  );
+  const check = "const fs=require('fs');const t=fs.readFileSync('hello.txt','utf8');if(t!=='hello jewbot\\n')process.exit(1);console.log('e2e-ok');\\n";
+  await fs.writeFile(path.join(root, 'check.js'), check);
   const files = new FileWorkspace(root);
   const context = new ContextIndexer(root);
   const goal = [
-    'Do only these tool calls, one per turn, then FINAL: done.',
-    '{"tool":"read_file","args":{"path":"hello.txt"}}',
-    '{"tool":"write_file","args":{"path":"hello.txt","content":"hello jewbot\\n"}}',
-    '{"tool":"run_terminal","args":{"command":"node check.js"}}',
-  ].join('\n');
+    'Complete this exact three-step acceptance task in order. Do not skip a step.',
+    '1. Call read_file on hello.txt and inspect its current contents.',
+    '2. Call write_file on hello.txt with the exact complete content: hello jewbot followed by one newline. Accept the proposed edit when the confirmation callback is offered.',
+    '3. Call run_terminal with the exact command: node check.js',
+    'Wait for the terminal observation. It must contain e2e-ok.',
+    'Only then reply with FINAL: done. Do not claim success without the terminal observation.',
+  ].join('\\n');
 
   let sawRead = false;
   let accepted = false;
   let sawTest = false;
   let last = '';
   try {
-    for (let attempt = 1; attempt <= 3 && !(sawRead && accepted && sawTest); attempt += 1) {
+    for (let attempt = 1; attempt <= 4 && !(sawRead && accepted && sawTest); attempt += 1) {
+      // Each retry starts from the same fixture so it must perform the full
+      // read -> proposed edit -> accepted edit -> terminal flow again.
+      await fs.writeFile(path.join(root, 'hello.txt'), 'hello\\n');
       const agent = new AgentLoop({
         files,
         terminal: defaultTerminal,
         ssh: defaultSshManager,
         context,
         llm: { host: HOST, model: CHAT_MODEL, allowPaidApis: false },
-        maxSteps: 8,
-        toolRetries: 2,
+        maxSteps: 16,
+        toolRetries: 3,
         confirmEdit: async (req) => {
           const ok = req.unifiedDiff.includes('hello jewbot');
           if (ok) accepted = true;
           return ok;
         },
       });
-      const result = await agent.run(attempt === 1 ? goal : 'Run {"tool":"run_terminal","args":{"command":"node check.js"}} then FINAL: done');
-      last = `${result.status} ${result.blockReason ?? ''} ${result.finalText ?? ''}`;
+      const result = await agent.run(goal);
+      last = `attempt ${attempt}: ${result.status} ${result.blockReason ?? ''} ${result.finalText ?? ''}`;
       for (const step of result.steps) {
         if (step.tool?.name === 'read_file') sawRead = true;
         if (step.tool?.name === 'run_terminal' && (step.observation || '').includes('e2e-ok')) sawTest = true;
       }
       const body = await fs.readFile(path.join(root, 'hello.txt'), 'utf8');
-      if (body === 'hello jewbot\n') accepted = true;
+      if (body !== 'hello jewbot\\n') accepted = false;
     }
     expect(sawRead, `agent did not read hello.txt (${last})`);
     expect(accepted, `Accept did not write hello.txt (${last})`);
-    expect((await fs.readFile(path.join(root, 'hello.txt'), 'utf8')) === 'hello jewbot\n', 'file was not updated');
+    expect((await fs.readFile(path.join(root, 'hello.txt'), 'utf8')) === 'hello jewbot\\n', 'file was not updated');
     expect(
       sawTest,
       'the agent did not successfully invoke node check.js through AgentLoop; direct terminal fallback is not accepted',
