@@ -163,6 +163,7 @@ contextBridge.exposeInMainWorld('jewbot', {
     ipcRenderer.on('jewbot:cascadeEvent', listener);
     return () => ipcRenderer.removeListener('jewbot:cascadeEvent', listener);
   },
+  expandMentions: (text: string) => ipcRenderer.invoke('jewbot:expandMentions', text) as Promise<{ text: string; error?: string }>,
   editorList: (rel?: string) => ipcRenderer.invoke('jewbot:editorList', rel) as Promise<string[]>,
   editorOpen: (rel: string) =>
     ipcRenderer.invoke('jewbot:editorOpen', rel) as Promise<{

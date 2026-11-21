@@ -129,6 +129,7 @@ declare global {
       cascadeStop: () => Promise<{ runState?: string }>;
       cascadeRequeue: (id: string) => Promise<{ ok: boolean; reason?: string }>;
       cascadeRemove: (id: string) => Promise<{ ok: boolean; reason?: string }>;
+      expandMentions: (text: string) => Promise<{ text: string; error?: string }>;
       editorList: (rel?: string) => Promise<string[]>;
       editorOpen: (rel: string) => Promise<{
         text: string;

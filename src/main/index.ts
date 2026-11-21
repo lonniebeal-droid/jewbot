@@ -17,6 +17,7 @@ import {
 } from '../modules/ssh';
 import { FileWorkspace } from '../modules/files';
 import { acceptInline, completeInline, EditorSession, proposeInlineEdit, tabLabel } from '../modules/editor';
+import { expandMentions } from '../modules/semantic';
 import type { InlineProposal } from '../modules/editor';
 import { ContextIndexer } from '../modules/context';
 import { AgentLoop, AgentStreamEvent, DestructiveConfirmRequest, EditConfirmRequest } from '../modules/agent';
@@ -565,6 +566,14 @@ app.whenReady().then(async () => {
     }
     const next = setProjectRoot(result.filePaths[0]);
     return { canceled: false, projectRoot: next };
+  });
+
+  ipcMain.handle('jewbot:expandMentions', async (_e, text: string) => {
+    try {
+      return { text: await expandMentions(projectRoot, String(text ?? '')) };
+    } catch (err) {
+      return { text: String(text ?? ''), error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   ipcMain.handle('jewbot:editorList', async (_e, rel?: string) => files.listDir(rel || '.'));
