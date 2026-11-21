@@ -933,6 +933,22 @@ async function send() {
   }
 }
 
+let backgroundTaskId = '';
+document.getElementById('backgroundRun').onclick = async () => {
+  const out = document.getElementById('backgroundOut');
+  const res = await window.jewbot.backgroundRun({
+    host: document.getElementById('backgroundHost').value.trim(),
+    model: document.getElementById('backgroundModel').value.trim() || 'qwen2.5-coder:1.5b',
+    goal: document.getElementById('backgroundGoal').value.trim(),
+  });
+  backgroundTaskId = res.task && res.task.id ? res.task.id : '';
+  out.textContent = res.error || (res.task && res.task.diff) || (res.task && res.task.status) || '';
+};
+document.getElementById('backgroundAccept').onclick = async () => {
+  if (!backgroundTaskId || !window.confirm('Apply the background diff to this project?')) return;
+  const res = await window.jewbot.backgroundAccept(backgroundTaskId);
+  document.getElementById('backgroundOut').textContent = res.ok ? 'applied' : res.error || 'not applied';
+};
 document.getElementById('refresh').onclick = refresh;
 document.getElementById('send').onclick = send;
 document.getElementById('stop').onclick = () => {

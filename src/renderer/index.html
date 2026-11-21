@@ -143,6 +143,17 @@
           <button class="secondary" id="refresh" type="button">Refresh</button>
         </div>
         <pre id="status">Loading…</pre>
+        <div id="backgroundPanel">
+          <div class="row">
+            <h3 style="margin:0">Background</h3>
+            <input id="backgroundHost" placeholder="lan host" />
+            <input id="backgroundModel" placeholder="model" />
+            <button class="secondary" id="backgroundRun" type="button">Queue</button>
+            <button id="backgroundAccept" type="button">Accept diff</button>
+          </div>
+          <textarea id="backgroundGoal" rows="2" placeholder="Headless goal. Nothing is written until Accept."></textarea>
+          <pre id="backgroundOut" class="term-out"></pre>
+        </div>
         <div id="modelsPanel">
           <div class="row">
             <input id="modelsHost" placeholder="http://127.0.0.1:11434" />
