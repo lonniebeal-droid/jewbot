@@ -1,0 +1,78 @@
+# Free GitHub-hosted runners only. No repository secrets.
+# The Ollama job exercises the real local agent, FIM, and embeddings.
+# The editor job opens the real window under Xvfb.
+
+name: End to end
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ollama:
+    name: Ollama agent, FIM, and embed
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+      - name: Wait for Ollama
+        run: |
+          set -euo pipefail
+          if ! curl -sf http://127.0.0.1:11434/api/tags >/dev/null; then
+            ollama serve > /tmp/ollama.log 2>&1 &
+          fi
+          for _ in $(seq 1 40); do
+            if curl -sf http://127.0.0.1:11434/api/tags >/dev/null; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Ollama did not start"
+          cat /tmp/ollama.log || true
+          exit 1
+      - name: Pull small local models
+        run: |
+          set -euo pipefail
+          ollama pull qwen2.5-coder:3b
+          ollama pull qwen2.5-coder:0.5b
+          ollama pull nomic-embed-text
+      - name: Headless agent, FIM, and embed
+        env:
+          JEWBOT_MODEL: qwen2.5-coder:3b
+          JEWBOT_COMPLETE_MODEL: qwen2.5-coder:0.5b
+          JEWBOT_FIM_MODEL: qwen2.5-coder:0.5b
+          JEWBOT_EMBED_MODEL: nomic-embed-text
+          OLLAMA_HOST: http://127.0.0.1:11434
+        run: npx --yes tsx scripts/e2e-ollama.ts
+
+  editor:
+    name: Electron window under Xvfb
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Window libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0 libcairo2 libgtk-3-0
+      - name: Build and open the editor
+        env:
+          JEWBOT_LAUNCH_SMOKE: "1"
+        run: |
+          npm run build
+          xvfb-run -a npx electron . --no-sandbox --disable-gpu
