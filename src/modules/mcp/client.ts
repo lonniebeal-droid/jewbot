@@ -1,5 +1,6 @@
 /**
- * A small stdio MCP client. Frames are Content-Length messages.
+ * A small stdio MCP client. Messages are newline-delimited JSON-RPC,
+ * one JSON-RPC message per line, per the MCP stdio transport.
  * Tool calls do not start a process unless that server's allow toggle is on.
  */
 
@@ -24,6 +25,7 @@ export async function callServerTool(
   tool: string,
   args: Record<string, unknown>,
   rpc?: McpRpc,
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean; blocked: boolean; text: string }> {
   if (server.allow !== true) {
     return {
@@ -34,7 +36,10 @@ export async function callServerTool(
   }
   const name = tool.trim();
   if (!name || /[\n\r]/.test(name)) return { ok: false, blocked: false, text: 'Invalid MCP tool name.' };
-  const owned = rpc ?? startStdio(server);
+  if (signal?.aborted) {
+    return { ok: false, blocked: false, text: 'Cancelled: the MCP tool call was cancelled before it ran.' };
+  }
+  const owned = rpc ?? startStdio(server, signal);
   try {
     if (!rpc) await handshake(owned);
     const result = await owned.request('tools/call', { name, arguments: args });
@@ -74,7 +79,7 @@ export function formatToolResult(result: unknown): string {
   return JSON.stringify(result);
 }
 
-export function startStdio(server: McpServer): McpRpc {
+export function startStdio(server: McpServer, signal?: AbortSignal): McpRpc {
   const child = spawn(server.command, server.args, {
     cwd: server.cwd,
     shell: false,
@@ -83,24 +88,32 @@ export function startStdio(server: McpServer): McpRpc {
   });
   let buffer = Buffer.alloc(0);
   const waiters = new Map<number, { resolve: (value: unknown) => void; reject: (err: Error) => void }>();
+  let closed = false;
+  let closeError: Error | null = null;
+  const failTransport = (err: Error): void => {
+    if (closed) return;
+    closed = true;
+    closeError = err;
+    signal?.removeEventListener('abort', onAbort);
+    for (const waiter of waiters.values()) waiter.reject(err);
+    waiters.clear();
+  };
+  const onAbort = (): void => {
+    failTransport(new Error('MCP request cancelled'));
+    child.kill();
+  };
+  signal?.addEventListener('abort', onAbort, { once: true });
+  if (signal?.aborted) onAbort();
   const take = (): void => {
-    while (buffer.length) {
-      const headerEnd = buffer.indexOf('\r\n\r\n');
-      if (headerEnd < 0) return;
-      const header = buffer.slice(0, headerEnd).toString('utf8');
-      const match = /Content-Length:\s*(\d+)/i.exec(header);
-      if (!match) {
-        buffer = buffer.slice(headerEnd + 4);
-        continue;
-      }
-      const length = Number(match[1]);
-      const start = headerEnd + 4;
-      if (buffer.length < start + length) return;
-      const body = buffer.slice(start, start + length).toString('utf8');
-      buffer = buffer.slice(start + length);
+    for (;;) {
+      const newline = buffer.indexOf(0x0a);
+      if (newline < 0) return;
+      const line = buffer.slice(0, newline).toString('utf8').trim();
+      buffer = buffer.slice(newline + 1);
+      if (!line) continue;
       let message: { id?: number; result?: unknown; error?: { message?: string } };
       try {
-        message = JSON.parse(body) as { id?: number; result?: unknown; error?: { message?: string } };
+        message = JSON.parse(line) as { id?: number; result?: unknown; error?: { message?: string } };
       } catch {
         continue;
       }
@@ -117,26 +130,40 @@ export function startStdio(server: McpServer): McpRpc {
     take();
   });
   child.on('error', (err) => {
-    for (const waiter of waiters.values()) waiter.reject(err);
-    waiters.clear();
+    failTransport(err);
+  });
+  child.on('close', (code) => {
+    failTransport(new Error(`MCP server exited (code ${code ?? 'unknown'}) before replying`));
   });
   const send = (payload: unknown): void => {
-    const body = Buffer.from(JSON.stringify(payload), 'utf8');
-    child.stdin.write(`Content-Length: ${body.length}\r\n\r\n`);
-    child.stdin.write(body);
+    if (closed) throw closeError ?? new Error('MCP server is closed');
+    child.stdin.write(`${JSON.stringify(payload)}\n`, 'utf8');
   };
   return {
     request(method, params) {
+      if (signal?.aborted) return Promise.reject(new Error('MCP request cancelled'));
+      if (closed) return Promise.reject(closeError ?? new Error('MCP server is closed'));
       const id = nextId++;
       return new Promise((resolve, reject) => {
         waiters.set(id, { resolve, reject });
-        send({ jsonrpc: '2.0', id, method, params: params ?? {} });
+        try {
+          send({ jsonrpc: '2.0', id, method, params: params ?? {} });
+        } catch (err) {
+          waiters.delete(id);
+          reject(err instanceof Error ? err : new Error(String(err)));
+        }
       });
     },
     notify(method, params) {
-      send({ jsonrpc: '2.0', method, params: params ?? {} });
+      if (closed) return;
+      try {
+        send({ jsonrpc: '2.0', method, params: params ?? {} });
+      } catch {
+        // Notifications are fire-and-forget; a dead transport drops them.
+      }
     },
     close() {
+      failTransport(new Error('MCP client closed'));
       child.stdin.end();
       child.kill();
     },

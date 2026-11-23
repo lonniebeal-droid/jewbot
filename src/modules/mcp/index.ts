@@ -17,11 +17,12 @@ export async function callConfiguredTool(options: {
   tool: string;
   args?: Record<string, unknown>;
   rpc?: McpRpc;
+  signal?: AbortSignal;
 }): Promise<{ ok: boolean; blocked: boolean; text: string }> {
   const servers = loadMcpServers(options.file);
   const server = servers.find((item) => item.name === options.server);
   if (!server) return { ok: false, blocked: false, text: `MCP server not found: ${options.server}` };
-  return callServerTool(server, options.tool, options.args ?? {}, options.rpc);
+  return callServerTool(server, options.tool, options.args ?? {}, options.rpc, options.signal);
 }
 
 export function serversForPrompt(file?: string): string {
