@@ -7,7 +7,7 @@
  */
 
 export const STREET_DISCLAIMER =
-  'Not financial advice. Street Trader teaches risk, chart reading, and scam spotting in plain talk. It does not tell you to buy or sell any stock, coin, or fund. Paper trade first. Bills before trades. This runs on free local Ollama only ($0).';
+  'Not financial advice. Street Trader teaches risk, chart reading, and scam spotting in plain talk. It does not tell you to buy or sell any stock, coin, or fund. It does not connect to a brokerage and it does not place orders. Paper trade first. Bills before trades. This runs on free local Ollama only ($0).';
 
 /** Owner references. The module never fetches these. */
 export const STREET_DRIVE_SOURCES = [
@@ -34,14 +34,14 @@ export const STREET_SYSTEM_PROMPT = [
   'Define a finance word the first time you use it.',
   'Prefer "$10 risk on a $250 position" over jargon.',
   'You are not a financial adviser. You never name a ticker to buy. You never sell courses, signals, or a group chat.',
-  'You never place a trade and you never call a broker API.',
+  'You never place a trade, you never open a brokerage connection, and you never call a broker API.',
   'You run on local Ollama only. You do not call a paid model.',
   'Paper trading comes first. Bills, an emergency fund, and high-interest debt come before trading money.',
   'House rules: risk 1% of the account on one trade, no position over 25% of the account while learning, take 2:1 reward-to-risk or skip, pick the stop before the size, walk away for the day at 3% down or three losses, walk away for the week at 6% down.',
   'If someone asks for a pick, refuse and teach those rules.',
   'If someone describes a live scam, help them stop sending money and point them to the Georgia Secretary of State, the FTC, and the FBI IC3. Never ask for logins, account numbers, or a Social Security number. Do not shame them.',
   'Never invent a live price or a hot play.',
-  'The full curriculum, cheat sheet, and journal stay on the owner Drive. Teach from this prompt and any cached rule below. Do not pretend you downloaded the course.',
+  'A read-only curriculum export ships with this module. Cite the section heading you used. The Drive originals stay the source of truth. Do not write back to Drive.',
   STREET_DISCLAIMER,
 ].join('\n');
 
@@ -146,8 +146,11 @@ export function excerptForQuestion(question: string): string | undefined {
   return hits.join('\n');
 }
 
-export function buildSystemPrompt(question: string): string {
+export function buildSystemPrompt(question: string, curriculumExcerpt?: string): string {
+  const parts = [STREET_SYSTEM_PROMPT];
+  const shipped = curriculumExcerpt?.trim();
+  if (shipped) parts.push(`Curriculum section (read-only export, cite this heading):\n${shipped}`);
   const excerpt = excerptForQuestion(question);
-  if (!excerpt) return STREET_SYSTEM_PROMPT;
-  return `${STREET_SYSTEM_PROMPT}\n\nCached excerpts (rules only, not the Drive course):\n${excerpt}`;
+  if (excerpt) parts.push(`Cached excerpts (rules only):\n${excerpt}`);
+  return parts.join('\n\n');
 }

@@ -96,7 +96,11 @@ function testModuleShape() {
   expect(jewbotModule.capabilities.includes('local-only'), 'local-only capability');
   expect(!jewbotModule.capabilities.includes('stub'), 'stub capability is gone');
   const names = (jewbotModule.tools || []).map((tool) => tool.name);
-  expect(names.join() === 'street_ask,street_outline,street_journal_prompt', `tools ${names.join()}`);
+  expect(
+    names.join() === 'street_ask,street_outline,street_journal_prompt,street_drive_log',
+    `tools ${names.join()}`,
+  );
+  expect(jewbotModule.tools?.every((tool) => tool.inputSchema && tool.inputSchema.type === 'object') === true, 'tools carry JSON schemas');
   expect(typeof modules.streetTrader.streetAsk === 'function', 'barrel exports streetAsk');
   expect(modules.streetTrader.jewbotModule.id === 'street-trader', 'barrel exports the module');
   expect(isLiveOrderRequest('Place my order for 10 shares') === true, 'order phrase is refused');
@@ -162,6 +166,13 @@ async function testAskReturnsDisclaimer() {
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push(url);
+    expect(url.startsWith(STREET_DEFAULT_HOST), `local url ${url}`);
+    if (url.endsWith('/api/embed')) {
+      const payload = JSON.parse(String(init?.body ?? '{}')) as { input?: unknown[] };
+      const count = Array.isArray(payload.input) ? payload.input.length : 1;
+      const embeddings = Array.from({ length: count }, () => [1, 0, 0]);
+      return new Response(JSON.stringify({ embeddings }), { status: 200 });
+    }
     expect(url === `${STREET_DEFAULT_HOST}/api/chat`, `chat url ${url}`);
     const body = String(init?.body ?? '');
     expect(body.includes('Not financial advice') || body.includes('not a financial adviser'), 'system prompt has the disclaimer');
@@ -177,7 +188,9 @@ async function testAskReturnsDisclaimer() {
     expect(/not financial advice/i.test(reply.text), 'text includes not financial advice');
     expect(reply.answer.includes('round down'), `answer ${reply.answer}`);
     expect(reply.spend === 'local-only', 'spend label');
-    expect(calls.length === 1, `chat calls ${calls.join(',')}`);
+    const chats = calls.filter((url) => url.endsWith('/api/chat'));
+    expect(chats.length === 1, `chat calls ${calls.join(',')}`);
+    expect(calls.every((url) => url.startsWith(STREET_DEFAULT_HOST)), 'ask stayed on localhost');
   } finally {
     globalThis.fetch = original;
   }

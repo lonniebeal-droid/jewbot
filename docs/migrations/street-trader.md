@@ -12,9 +12,9 @@ Former role: a cloud trading agent. This module is the local teacher. It is not 
 
 This build does not place orders, call a broker, or read an account.
 
-## Drive source of truth (owner references, not downloaded)
+## Drive source of truth
 
-The course already exists on the owner's Drive. Jewbot does not copy it into the repo and does not fetch it at runtime.
+The course already exists on the owner's Drive. A read-only markdown export ships in `src/modules/street-trader/curriculum` for local retrieval. Runtime does not fetch Drive, and it does not write the originals.
 
 - Curriculum v1.1 (Atlanta gig workers, street voice): https://docs.google.com/document/d/1UDUxjOMcV7-_l1mSlPU3ggYzQKrf9vzyNSjobYpU0-M/edit
 - 1-page cheat sheet: https://docs.google.com/document/d/1ANO1STpKBx1QILdMWuzbrqc-N2Zi7CxYaHDQ1sB-n6E/edit
@@ -27,6 +27,6 @@ Related owner docs, also not vendored: the local-module spec (`1_MosFHc_GDk8x00J
 - Broker logins, API secrets, and account identifiers
 - Live positions and anything that would move money
 - The journal rows themselves (this module only suggests prompts)
-- Master 3 claim logs. This module does not append to Drive
+- Master 3 claim logs. This module does not append to Drive. The stub exporter names continuation doc `1uKlLWyaa6Q8dOC22Z-jWXCRWXr_lAYdxU-QRi69bjh4` and stays off.
 
 Those stay on the owner machine. The module does not ask for them.
