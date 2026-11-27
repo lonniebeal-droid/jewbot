@@ -4,6 +4,12 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 
 ## 0.6.0 (unreleased)
 
+### Action inbox
+
+- Polls a ju-command-center inbox (`inbox/*.json`), claims with an atomic rename to `work/<id>.claimed.json`, and writes `receipts/<id>.json`.
+- Receipts include date/time, project, worker, changes, verification, receipt id, status `VERIFIED` / `PARTIAL` / `BLOCKED`, blocker, next action, and `spend=$0`.
+- A step that needs a person is `BLOCKED`. Confirm gates are not auto-approved. A public inbox URL is refused.
+
 ### Bounded files
 
 - Agent reads and writes refuse a file over 200,000 characters instead of silently truncating it.
