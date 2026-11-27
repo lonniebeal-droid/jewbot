@@ -10,6 +10,11 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 - Receipts include date/time, project, worker, changes, verification, receipt id, status `VERIFIED` / `PARTIAL` / `BLOCKED`, blocker, next action, and `spend=$0`.
 - A step that needs a person is `BLOCKED`. Confirm gates are not auto-approved. A public inbox URL is refused.
 
+### Bounded files
+
+- Agent reads and writes refuse a file over 200,000 characters instead of silently truncating it.
+- After every Accepted write, local and SFTP, the file is read back and the SHA-256 must match. A mismatch throws.
+
 ### SSH device identity
 
 - A host in `~/.jewbot/hosts.json` can name a device (`mac`, `dell`, `pi`, `pixel`, `iphone`) plus `tailscale_ip`, `tailscale_hostname`, `os`, and `role`.
