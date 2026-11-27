@@ -29,6 +29,7 @@ import {
 import { formatSshObservation, HostKeyPrompt, SecretPrompt, SshExecResult, SshManager } from '../ssh';
 import { ContextIndexer, formatFindResult, formatSearchResult } from '../context';
 import { systemWithRules } from '../rules';
+import { personaSuffix } from '../persona';
 import { callConfiguredTool } from '../mcp';
 import { checkShellCommand, issueConfirmation } from '../safety';
 
@@ -251,7 +252,7 @@ export class AgentLoop {
     }
 
     const messages: ChatMessage[] = [
-      { role: 'system', content: systemWithRules(SYSTEM, this.deps.files.projectRoot) },
+      { role: 'system', content: `${systemWithRules(SYSTEM, this.deps.files.projectRoot)}${personaSuffix()}` },
       {
         role: 'user',
         content: `${turnContext}\n\nGoal:\n${goal}`,
