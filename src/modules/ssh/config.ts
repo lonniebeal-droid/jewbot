@@ -1,6 +1,11 @@
 /**
  * Local SSH host allowlist and TOFU known-host store.
  * Passwords, passphrases, and private key bytes never belong in these files.
+ *
+ * Device identity matches ju-device-mesh inventory/devices.json where that file
+ * has fields: name (mac, dell, pi, pixel, iphone), tailscale_ip, os, role, status.
+ * That inventory has no SSH key path and no hostname. Jewbot keeps privateKeyPath
+ * as a path string and adds tailscale_hostname. The key file is not read here.
  */
 
 import * as fs from 'fs';
@@ -19,6 +24,14 @@ export interface SshHostConfig {
   privateKeyPath?: string;
   askPassphrase: boolean;
   askPassword: boolean;
+  /** ju-device-mesh inventory name: mac, dell, pi, pixel, or iphone. */
+  device?: string;
+  /** ju-device-mesh field. Tailscale CGNAT address only. Never a key. */
+  tailscale_ip?: string;
+  /** Jewbot field. The mesh inventory has no hostname. */
+  tailscale_hostname?: string;
+  os?: string;
+  role?: string;
 }
 
 export interface SshHostPublic {
@@ -29,6 +42,13 @@ export interface SshHostPublic {
   auth: SshAuthKind;
   askPassphrase: boolean;
   askPassword: boolean;
+  device?: string;
+  tailscale_ip?: string;
+  tailscale_hostname?: string;
+  os?: string;
+  role?: string;
+  /** Path only. The key file is never read into this object. */
+  privateKeyPath?: string;
 }
 
 export interface KnownHostEntry {
@@ -87,6 +107,34 @@ export function keyMaterialNeedsPassphrase(text: string): boolean {
   return false;
 }
 
+const DEVICE_IDS = new Set(['mac', 'dell', 'pi', 'pixel', 'iphone']);
+
+function isTailscaleIPv4(value: string): boolean {
+  const parts = value.split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  const addr = (((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3]) >>> 0;
+  const start = ((100 << 24) + (64 << 16)) >>> 0;
+  const end = ((100 << 24) + (128 << 16)) >>> 0;
+  return addr >= start && addr < end;
+}
+
+function optionalDevice(record: Record<string, unknown>, name: string): string | undefined {
+  const raw = record.device === undefined ? (DEVICE_IDS.has(name) ? name : undefined) : record.device;
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'string' || !DEVICE_IDS.has(raw)) {
+    throw new Error(`Host "${name}" device must be mac, dell, pi, pixel, or iphone`);
+  }
+  return raw;
+}
+
+function optionalText(value: unknown, name: string, label: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !value.trim() || /[\r\n]/.test(value) || /PRIVATE KEY|BEGIN /.test(value)) {
+    throw new Error(`Host "${name}" has an invalid ${label}`);
+  }
+  return value.trim();
+}
+
 export function toPublicHost(cfg: SshHostConfig): SshHostPublic {
   return {
     name: cfg.name,
@@ -96,6 +144,12 @@ export function toPublicHost(cfg: SshHostConfig): SshHostPublic {
     auth: cfg.auth,
     askPassphrase: cfg.askPassphrase,
     askPassword: cfg.askPassword,
+    device: cfg.device,
+    tailscale_ip: cfg.tailscale_ip,
+    tailscale_hostname: cfg.tailscale_hostname,
+    os: cfg.os,
+    role: cfg.role,
+    privateKeyPath: cfg.privateKeyPath,
   };
 }
 
@@ -205,7 +259,29 @@ export function parseHostEntry(entry: unknown, index: number, seen: Set<string>)
   if (askPassphrase && !privateKeyPath) {
     throw new Error(`Host "${name}" askPassphrase requires privateKeyPath`);
   }
-  return { name, host, port, username, auth, privateKeyPath, askPassphrase, askPassword: auth === 'password' || askPassword };
+  const device = optionalDevice(record, name);
+  const tailscale_ip = optionalText(record.tailscale_ip, name, 'tailscale_ip');
+  if (tailscale_ip && !isTailscaleIPv4(tailscale_ip)) {
+    throw new Error(`Host "${name}" tailscale_ip must be inside 100.64.0.0/10`);
+  }
+  const tailscale_hostname = optionalText(record.tailscale_hostname, name, 'tailscale_hostname');
+  const osName = optionalText(record.os, name, 'os');
+  const role = optionalText(record.role, name, 'role');
+  return {
+    name,
+    host,
+    port,
+    username,
+    auth,
+    privateKeyPath,
+    askPassphrase,
+    askPassword: auth === 'password' || askPassword,
+    device,
+    tailscale_ip,
+    tailscale_hostname,
+    os: osName,
+    role,
+  };
 }
 
 function requiredString(value: unknown, label: string): string {

@@ -2,6 +2,14 @@
 
 All notable changes to Jewbot are listed here. The packaged app version comes from `package.json`.
 
+## 0.6.0 (unreleased)
+
+### SSH device identity
+
+- A host in `~/.jewbot/hosts.json` can name a device (`mac`, `dell`, `pi`, `pixel`, `iphone`) plus `tailscale_ip`, `tailscale_hostname`, `os`, and `role`.
+- Each device keeps its own `privateKeyPath`. The key file is not read into the host record, and an inline private key is refused.
+- `tailscale_ip` must sit in `100.64.0.0/10`.
+
 ## 0.5.0 — 2026-11-21
 
 Production checks on free GitHub-hosted runners. No paid APIs and no repository secrets.
