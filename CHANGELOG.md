@@ -2,6 +2,13 @@
 
 All notable changes to Jewbot are listed here. The packaged app version comes from `package.json`.
 
+## 0.6.0 (unreleased)
+
+### Persona
+
+- `persona: "based"` in `~/.jewbot/settings.json` adds a witty, blunt, profane voice to the agent system prompt.
+- The setting is off unless that exact value is present. It does not approve a destructive command, a secret, a paid host, or a file write.
+
 ## 0.5.0 — 2026-11-21
 
 Production checks on free GitHub-hosted runners. No paid APIs and no repository secrets.
