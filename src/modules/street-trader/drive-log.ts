@@ -8,8 +8,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-/** Receipts continuation doc from the 2026-11-06 module spec. Not Master 2. */
-export const MASTER3_CONTINUATION_DOC_ID = '1kuCWpWMGtpaeo8UOnvvZh9AnrLLQfTD188Ko1i_Tmq4';
+/**
+ * Master 3 continuation doc. The earlier continuation
+ * `1kuCWpWMGtpaeo8UOnvvZh9AnrLLQfTD188Ko1i_Tmq4` is over the Google Docs size cap.
+ * Not Master 2.
+ */
+export const MASTER3_CONTINUATION_DOC_ID = '1uKlLWyaa6Q8dOC22Z-jWXCRWXr_lAYdxU-QRi69bjh4';
 
 export type DriveLogKind = 'RECEIPT' | 'CLAIM' | 'STATUS' | 'BLOCKER';
 

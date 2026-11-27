@@ -25,7 +25,7 @@ All notable changes to Jewbot are listed here. The packaged app version comes fr
 
 - The existing `street-trader` module now cites a read-only curriculum export, ranked with the M11 `nomic-embed-text` index and a keyword fallback when Ollama embeddings are down.
 - `src/modules/street_trader` re-exports that module and its tool JSON schemas. The registry id stays `street-trader`.
-- A session receipt appends to a local JSONL file. The Master 3 continuation exporter is stubbed and off, with no credentials in the repo.
+- A session receipt appends to a local JSONL file. The Master 3 continuation exporter targets `1uKlLWyaa6Q8dOC22Z-jWXCRWXr_lAYdxU-QRi69bjh4`, stays stubbed and off, and has no credentials in the repo.
 - When local Ollama is offline, `street_ask` still passes `assertLocalSpendOnly` and returns `local model offline` instead of calling a paid host.
 
 ### Persona

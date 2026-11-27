@@ -27,6 +27,6 @@ Related owner docs, also not vendored: the local-module spec (`1_MosFHc_GDk8x00J
 - Broker logins, API secrets, and account identifiers
 - Live positions and anything that would move money
 - The journal rows themselves (this module only suggests prompts)
-- Master 3 claim logs. This module does not append to Drive
+- Master 3 claim logs. This module does not append to Drive. The stub exporter names continuation doc `1uKlLWyaa6Q8dOC22Z-jWXCRWXr_lAYdxU-QRi69bjh4` and stays off.
 
 Those stay on the owner machine. The module does not ask for them.

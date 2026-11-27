@@ -5,7 +5,7 @@ Local teaching module for the Atlanta gig-worker curriculum. `index.ts` exports 
 Tools:
 
 - `street_ask` — one question through `src/modules/llm/ollama.ts` after `assertLocalSpendOnly`. A non-local host is refused even when `JEWBOT_ALLOW_PAID=1`. The reply cites a section from `curriculum/` and always carries the not-financial-advice line. If Ollama cannot be reached, the error is `local model offline`.
-- `street_drive_log` — appends one receipt line to a local JSONL file. `exportDriveLog()` names the Master 3 continuation doc and does not call it.
+- `street_drive_log` — appends one receipt line to a local JSONL file. `exportDriveLog()` names Master 3 continuation doc `1uKlLWyaa6Q8dOC22Z-jWXCRWXr_lAYdxU-QRi69bjh4` and does not call it.
 - `street_outline` — the five topic areas (position sizing, risk management, chart reading, scam and pump-and-dump spotting, trading routine). No model call.
 - `street_journal_prompt` — reflection prompts for a trade, a session, or a week. It does not write the journal.
 

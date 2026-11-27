@@ -90,6 +90,8 @@ async function testThreeFixtures() {
     const exported = exportDriveLog();
     expect(exported.exported === false, 'exporter stays off');
     expect(exported.targetDocId === MASTER3_CONTINUATION_DOC_ID, 'exporter names the continuation doc');
+    expect(exported.targetDocId === '1uKlLWyaa6Q8dOC22Z-jWXCRWXr_lAYdxU-QRi69bjh4', 'continuation doc is the one under the size cap');
+    expect(exported.targetDocId !== '1kuCWpWMGtpaeo8UOnvvZh9AnrLLQfTD188Ko1i_Tmq4', 'the capped continuation doc is not the target');
     expect(!/api[_-]?key|secret|credential/i.test(JSON.stringify(exported)), 'exporter result has no credentials');
   } finally {
     if (saved === undefined) delete process.env.JEWBOT_STREET_DRIVE_LOG;
