@@ -18,6 +18,8 @@ import {
   type OllamaConfig,
   probeOllama,
 } from '../llm/ollama';
+import { teachFromCurriculum } from './curriculum';
+import { appendDriveLog } from './drive-log';
 import { buildSystemPrompt, STREET_DISCLAIMER } from './prompts';
 
 export const STREET_DEFAULT_HOST = 'http://127.0.0.1:11434';
@@ -35,6 +37,8 @@ export interface StreetAskResult {
   disclaimer: string;
   /** True when the asker wanted an order or a broker call. No model hop in that case. */
   refusedOrder: boolean;
+  /** Curriculum section the reply was grounded in. */
+  citation?: string;
   text: string;
   answer: string;
 }
@@ -110,7 +114,8 @@ export async function streetAsk(
   const cfg = assertStreetLocal(partial);
   if (isLiveOrderRequest(q)) {
     const answer =
-      'Street Trader does not place trades and does not call a broker. Ask how the rule works, then paper it yourself.';
+      'Street Trader does not place trades, does not connect to a brokerage, and does not call a broker. Ask how the rule works, then paper it yourself.';
+    appendDriveLog({ task: 'refused order', kind: 'RECEIPT', detail: 'no brokerage' });
     return {
       module: 'street-trader',
       spend: 'local-only',
@@ -121,18 +126,31 @@ export async function streetAsk(
       text: `${STREET_DISCLAIMER}\n\n${answer}`,
     };
   }
+  const taught = await teachFromCurriculum(q, { host: cfg.host });
   const messages: ChatMessage[] = [
-    { role: 'system', content: buildSystemPrompt(q) },
+    { role: 'system', content: buildSystemPrompt(q, `${taught.heading}\n${taught.text}`) },
     { role: 'user', content: q },
   ];
-  const answer = (await chatOnce(messages, cfg, options)).trim();
+  let answer: string;
+  try {
+    answer = (await chatOnce(messages, cfg, options)).trim();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/Cannot reach Ollama|ECONNREFUSED|ENOTFOUND|fetch failed|network/i.test(message)) {
+      appendDriveLog({ task: q, kind: 'BLOCKER', detail: 'local model offline', section: taught.heading });
+      throw new Error('local model offline');
+    }
+    throw err;
+  }
+  appendDriveLog({ task: q, kind: 'RECEIPT', section: taught.heading });
   return {
     module: 'street-trader',
     spend: 'local-only',
     tool: 'street_ask',
     disclaimer: STREET_DISCLAIMER,
     refusedOrder: false,
+    citation: taught.heading,
     answer,
-    text: `${STREET_DISCLAIMER}\n\n${answer}`,
+    text: `${STREET_DISCLAIMER}\n\nCited section: ${taught.heading}\n\n${answer}`,
   };
 }

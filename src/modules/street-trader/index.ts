@@ -1,13 +1,24 @@
 /**
  * Street Trader. Teaches the local curriculum pack on fleet Ollama.
- * Does not place trades, call a broker, or download the Drive course.
+ * Does not place trades, connect to a brokerage, or write back to Drive.
  */
 
 import type { JewbotModule } from '../plugin/types';
+import { streetToolSchema } from '../street_trader/schemas';
+import { appendDriveLog, exportDriveLog } from './drive-log';
 import { streetJournalPrompt } from './journal';
 import { streetAsk, streetHealth } from './local';
 import { streetOutline } from './outline';
 
+export type { CurriculumHit, CurriculumSection, TeachResult } from './curriculum';
+export { loadCurriculum, retrieveCurriculum, teachFromCurriculum } from './curriculum';
+export type { DriveLogKind, DriveLogLine } from './drive-log';
+export {
+  appendDriveLog,
+  driveLogPath,
+  exportDriveLog,
+  MASTER3_CONTINUATION_DOC_ID,
+} from './drive-log';
 export type { JournalKind, JournalPrompt, StreetJournal } from './journal';
 export { streetJournalPrompt } from './journal';
 export type { StreetAskResult, StreetHealth } from './local';
@@ -37,24 +48,33 @@ export const jewbotModule: JewbotModule = {
   id: 'street-trader',
   title: 'Street Trader',
   description:
-    'Teaches position sizing, risk, charts, scam spotting, and a paper-trading routine on local Ollama. Does not place trades or call a broker.',
-  version: '0.2.0',
+    'Teaches position sizing, risk, charts, scam spotting, and a paper-trading routine on local Ollama. Does not place trades or connect to a brokerage.',
+  version: '0.3.0',
   capabilities: ['teach', 'chat', 'local-only'],
   tools: [
     {
       name: 'street_ask',
       description:
-        'Answer a curriculum question on local Ollama after assertLocalSpendOnly. Refuses paid hosts, ticker picks, and any request to place a trade.',
+        'Answer a curriculum question on local Ollama after assertLocalSpendOnly. Cites a shipped curriculum section. Refuses paid hosts, ticker picks, brokerage connections, and any request to place a trade.',
+      inputSchema: streetToolSchema('street_ask'),
     },
     {
       name: 'street_outline',
       description:
-        'Return the five-topic lesson map (sizing, risk, charts, scams, routine). No model call. The full course stays on the owner Drive.',
+        'Return the five-topic lesson map (sizing, risk, charts, scams, routine). No model call.',
+      inputSchema: streetToolSchema('street_outline'),
     },
     {
       name: 'street_journal_prompt',
       description:
         'Return journal reflection prompts for a trade, a session, or a week. Does not write the sheet or read an account.',
+      inputSchema: streetToolSchema('street_journal_prompt'),
+    },
+    {
+      name: 'street_drive_log',
+      description:
+        'Append one session receipt to the local JSONL log. The Master 3 continuation exporter stays off and holds no credentials.',
+      inputSchema: streetToolSchema('street_drive_log'),
     },
   ],
   async health() {
@@ -74,4 +94,6 @@ export const streetTools = {
   ask: streetAsk,
   outline: streetOutline,
   journal: streetJournalPrompt,
+  driveLog: appendDriveLog,
+  exportDriveLog,
 };

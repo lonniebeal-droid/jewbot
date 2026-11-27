@@ -6,6 +6,8 @@
 export interface ModuleTool {
   name: string;
   description: string;
+  /** JSON Schema for the tool arguments. Older modules omit it. */
+  inputSchema?: Record<string, unknown>;
 }
 
 export interface ModuleHealth {

@@ -12,9 +12,9 @@ Former role: a cloud trading agent. This module is the local teacher. It is not 
 
 This build does not place orders, call a broker, or read an account.
 
-## Drive source of truth (owner references, not downloaded)
+## Drive source of truth
 
-The course already exists on the owner's Drive. Jewbot does not copy it into the repo and does not fetch it at runtime.
+The course already exists on the owner's Drive. A read-only markdown export ships in `src/modules/street-trader/curriculum` for local retrieval. Runtime does not fetch Drive, and it does not write the originals.
 
 - Curriculum v1.1 (Atlanta gig workers, street voice): https://docs.google.com/document/d/1UDUxjOMcV7-_l1mSlPU3ggYzQKrf9vzyNSjobYpU0-M/edit
 - 1-page cheat sheet: https://docs.google.com/document/d/1ANO1STpKBx1QILdMWuzbrqc-N2Zi7CxYaHDQ1sB-n6E/edit
