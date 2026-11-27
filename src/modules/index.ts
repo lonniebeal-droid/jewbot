@@ -20,6 +20,7 @@ export * as rules from './rules';
 export * as background from './background';
 export * as docs from './docs';
 export * as mcp from './mcp';
+export * as inbox from './inbox';
 export * as semantic from './semantic';
 export * as composer from './composer';
 export * as git from './git';
