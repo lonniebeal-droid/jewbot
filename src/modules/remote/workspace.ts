@@ -6,6 +6,7 @@
 
 import { createTwoFilesPatch } from 'diff';
 import type { DiffPreview } from '../files';
+import { assertReadback, assertWithinLimit, MAX_READ_CHARS } from '../files';
 import { checkShellCommand } from '../safety';
 
 export interface SftpDirEntry {
@@ -57,7 +58,9 @@ export class RemoteWorkspace {
     const abs = this.resolve(rel);
     const buf = await this.sftp.readFile(abs);
     if (buf.includes(0)) throw new Error(`Refusing to read binary file: ${rel}`);
-    return buf.toString('utf8');
+    const text = buf.toString('utf8');
+    assertWithinLimit(text, `remote read of ${rel}`);
+    return text;
   }
 
   async proposeEdit(rel: string, proposed: string): Promise<DiffPreview> {
@@ -85,8 +88,14 @@ export class RemoteWorkspace {
 
   async applyEdit(preview: DiffPreview, confirmed: boolean, _opts?: { allowSecret?: boolean }): Promise<void> {
     if (confirmed !== true) throw new Error('Apply requires confirmation');
+    if (preview.proposed.length > MAX_READ_CHARS) {
+      throw new Error(`Refusing to write remote file larger than ${MAX_READ_CHARS} chars`);
+    }
     const abs = this.resolve(preview.filePath);
-    await this.sftp.writeFile(abs, Buffer.from(preview.proposed, 'utf8'));
+    const body = Buffer.from(preview.proposed, 'utf8');
+    await this.sftp.writeFile(abs, body);
+    const readback = await this.sftp.readFile(abs);
+    assertReadback(preview.filePath, preview.proposed, readback.toString('utf8'));
   }
 
   /** Walk text files for a remote project search. Skips vendor and VCS dirs. */

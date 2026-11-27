@@ -5,7 +5,7 @@
  * (.env, keys) stay closed unless that confirmation explicitly opens them.
  */
 
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createTwoFilesPatch } from 'diff';
@@ -41,6 +41,23 @@ export interface UndoResult {
 
 /** Cap a single read so a huge file cannot flood the agent context. */
 export const MAX_READ_CHARS = 200_000;
+
+export function contentHash(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+export function assertWithinLimit(text: string, label: string): void {
+  if (text.length > MAX_READ_CHARS) {
+    throw new Error(`Refusing ${label}: ${text.length} chars exceeds ${MAX_READ_CHARS}`);
+  }
+}
+
+/** Compare the bytes just written with a fresh read. Throws on any mismatch. */
+export function assertReadback(label: string, expected: string, actual: string): void {
+  const wrote = contentHash(expected);
+  const read = contentHash(actual);
+  if (wrote !== read) throw new Error(`Readback mismatch for ${label}: wrote ${wrote} read ${read}`);
+}
 
 const HARD_IGNORE = ['node_modules/', 'dist/', '.git/', '.jewbot/', '*.gguf'];
 
@@ -151,10 +168,7 @@ export class FileWorkspace {
     if (!st.isFile()) throw new Error(`Not a file: ${rel}`);
     const text = await fs.readFile(abs, 'utf8');
     if (text.includes('\0')) throw new Error(`Refusing to read binary file: ${rel}`);
-    if (text.length > MAX_READ_CHARS) {
-      const omitted = text.length - MAX_READ_CHARS;
-      return `${text.slice(0, MAX_READ_CHARS)}\n… [truncated ${omitted} chars]`;
-    }
+    assertWithinLimit(text, `read of ${rel}`);
     return text;
   }
 
@@ -240,6 +254,8 @@ export class FileWorkspace {
 
     await fs.mkdir(path.dirname(abs), { recursive: true });
     await fs.writeFile(abs, preview.proposed, 'utf8');
+    const readback = await fs.readFile(abs, 'utf8');
+    assertReadback(display, preview.proposed, readback);
     this.rememberUndo(preview.editId, {
       filePath: display,
       previous: preview.created ? null : preview.original,

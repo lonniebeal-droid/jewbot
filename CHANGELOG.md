@@ -2,6 +2,13 @@
 
 All notable changes to Jewbot are listed here. The packaged app version comes from `package.json`.
 
+## 0.6.0 (unreleased)
+
+### Bounded files
+
+- Agent reads and writes refuse a file over 200,000 characters instead of silently truncating it.
+- After every Accepted write, local and SFTP, the file is read back and the SHA-256 must match. A mismatch throws.
+
 ## 0.5.0 — 2026-11-21
 
 Production checks on free GitHub-hosted runners. No paid APIs and no repository secrets.
